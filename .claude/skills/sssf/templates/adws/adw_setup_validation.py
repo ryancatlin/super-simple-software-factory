@@ -85,6 +85,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         else:
             handle = None
             torn_down = False
+            verdict = None
             try:
                 with run.phase(PhaseParams(name=f"provision_{i}", kind="code", owner="service",
                                            description="Start the declared service and wait for health, with a hard deadline")) as ph:
@@ -108,12 +109,24 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                            description="Stop the service children-first and verify its port actually freed")) as ph:
                     torn_down = True
                     ph.log(port_freed=services.stop(run, handle))
+            except RuntimeError as exc:
+                # Provision or capture failed fast (health deadline, dead
+                # flow runner). That is a finding for the builder — it owns
+                # health_url, the timeout, and the service env — through the
+                # same door a validator's fail would use. If the cause is a
+                # prerequisite only the engineer can start (a stopped
+                # database), the loop exhausts with this reason instead of a
+                # traceback.
+                feedback = GenericOutput(status="fail",
+                                         summary=f"provision/capture failed: {exc}",
+                                         notes_for_next_agent=f"The declaration could not be executed: {exc}")
+            else:
+                if verdict is not None and verdict.passed:
+                    break
+                feedback = verdict
             finally:
                 if handle is not None and not torn_down:
                     services.stop(run, handle)   # crash and kill paths leave no orphan
-            if verdict is not None and verdict.passed:
-                break
-            feedback = verdict
 
         if i == MAX_SETUP_LOOPS:
             break

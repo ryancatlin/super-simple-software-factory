@@ -24,8 +24,8 @@ import argparse
 import sys
 
 from adw_modules import agents, gates, services, session, utils
-from adw_modules.data_types import (AgentCall, BuildOutput, PhaseParams,
-                                    ValidateOutput)
+from adw_modules.data_types import (AgentCall, BuildOutput, GenericOutput,
+                                    PhaseParams, ValidateOutput)
 from adw_validate import declaration_gap
 
 REQUIRED_AGENTS = ["builder", "validator"]
@@ -93,6 +93,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     for i in range(1, MAX_VALIDATION_LOOPS + 1):
         handle = None
         torn_down = False
+        verdict = None
         try:
             with run.phase(PhaseParams(name=f"provision_{i}", kind="code", owner="service",
                                        description="Start the declared service and wait for health, with a hard deadline")) as ph:
@@ -116,17 +117,31 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                        description="Stop the service children-first and verify its port actually freed")) as ph:
                 torn_down = True
                 ph.log(port_freed=services.stop(run, handle))
+        except RuntimeError as exc:
+            # Provision or capture failed fast. The declaration was proven
+            # when it was set up, so the likely cause is the change under
+            # validation breaking startup or the health endpoint — a finding
+            # for the builder through the same door a validator's fail uses.
+            feedback = GenericOutput(status="fail",
+                                     summary=f"provision/capture failed: {exc}",
+                                     notes_for_next_agent="Validation could not even run — the proven "
+                                                          f"declaration failed to execute: {exc}. If your change "
+                                                          "altered startup, the port, or the health endpoint, fix that.")
+        else:
+            if verdict is not None and verdict.passed:
+                break
+            feedback = verdict
         finally:
             if handle is not None and not torn_down:
                 services.stop(run, handle)   # crash and kill paths leave no orphan
 
-        if verdict.passed or i == MAX_VALIDATION_LOOPS:
+        if i == MAX_VALIDATION_LOOPS:
             break
 
         with run.phase(PhaseParams(name=f"revise_{i}", kind="agent", owner="builder", retries=1,
                                    description="Close every blocking finding the validator's evidence named")) as ph:
             ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + FLOW_BRIEF,
-                              previous=verdict,
+                              previous=feedback,
                               gates=[gates.diff_matches_claims]))
 
     return run.finish(accepted=verdict is not None and verdict.passed,
