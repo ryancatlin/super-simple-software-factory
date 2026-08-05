@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, hrefFor, phaseCrumb } from './lib/router'
+import DocsView from './components/DocsView.vue'
 import SessionsList from './components/SessionsList.vue'
 import SessionTrace from './components/SessionTrace.vue'
 
 const route = useRoute()
+// '#/docs' is a reserved page, not a session — adw_ids are 8-hex, so the
+// word can never collide with a real run.
+const isDocs = computed(() => route.value.adwId === 'docs')
 </script>
 
 <template>
@@ -20,21 +25,29 @@ const route = useRoute()
         <span class="brand">Super Simple Software Factory</span>
         <span class="sep">›</span>
         <a :href="hrefFor()" :class="{ current: !route.adwId }">sessions</a>
-        <template v-if="route.adwId">
+        <template v-if="route.adwId && !isDocs">
           <span class="sep">›</span>
           <a :href="hrefFor(route.adwId)" :class="{ current: !route.phaseId }">{{
             route.adwId
           }}</a>
         </template>
-        <template v-if="route.adwId && route.phaseId">
+        <template v-if="route.adwId && !isDocs && route.phaseId">
           <span class="sep">›</span>
           <span class="current">{{ phaseCrumb ?? route.phaseId }}</span>
         </template>
+        <template v-if="isDocs">
+          <span class="sep">›</span>
+          <span class="current">docs</span>
+        </template>
       </nav>
-      <span class="live-hint"><span class="live-dot" /> live</span>
+      <span class="top-right">
+        <a href="#/docs" class="docs-link" :class="{ current: isDocs }">docs</a>
+        <span class="live-hint"><span class="live-dot" /> live</span>
+      </span>
     </header>
     <main>
-      <SessionsList v-if="!route.adwId" />
+      <DocsView v-if="isDocs" />
+      <SessionsList v-else-if="!route.adwId" />
       <SessionTrace v-else :key="route.adwId" :adw-id="route.adwId" :phase-id="route.phaseId" />
     </main>
   </div>
@@ -109,6 +122,23 @@ const route = useRoute()
 
 .crumbs .current {
   color: var(--text);
+}
+
+.top-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.docs-link {
+  color: var(--dim);
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+
+.docs-link:hover,
+.docs-link.current {
+  color: var(--amber);
 }
 
 .live-hint {
