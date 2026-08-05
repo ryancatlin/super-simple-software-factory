@@ -196,14 +196,17 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
     # Permission is checked after every send is done, and before the envelope is
     # accepted: an agent does not get to report success on a phase in which it
-    # wrote somewhere it was not allowed to.
+    # wrote somewhere it was not allowed to. A call-level `writes` narrows the
+    # agent's config for this phase only.
+    enforce_as = (agent.model_copy(update={"writes": call.writes})
+                  if call.writes is not None else agent)
     try:
-        touched = permissions.enforce(run, phase, agent, tree_before)
+        touched = permissions.enforce(run, phase, enforce_as, tree_before)
     except permissions.PermissionBreach as breach:
         run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
                                      type="error", name="permission_breach",
                                      payload={"agent": agent.name, "error": str(breach),
-                                              "writes": agent.writes,
+                                              "writes": enforce_as.writes,
                                               "protected_files": run.cfg.defaults.protected_files}))
         raise
     if touched:

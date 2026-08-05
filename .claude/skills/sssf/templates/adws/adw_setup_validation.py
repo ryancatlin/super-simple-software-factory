@@ -33,6 +33,13 @@ from adw_validate import declaration_gap
 REQUIRED_AGENTS = ["scout", "builder", "validator"]
 MAX_SETUP_LOOPS = 3
 
+# The setup builder writes the measuring instrument, so it must not be able to
+# edit the thing being measured: mechanically narrowed to the declaration for
+# declare/revise (permissions.enforce rolls back and aborts on any src/ write),
+# and the commit stages exactly this bound — the enforcement is what makes the
+# pathspec an authoritative file list (see git_helper.commit_paths).
+VALIDATION_WRITES = ["adws/adw_data/validation/"]
+
 SCOUT_BRIEF = """Recon this project's local dev story for validation setup. Report:
 1. The exact command that serves the app for local development (argv, bare binary names), and any prerequisite that must already be running (database, docker compose service) — name it, do not start it.
 2. The port and a URL that answers only once the app is genuinely up, and roughly how long a cold start takes.
@@ -41,7 +48,7 @@ Change nothing. Engineer's steer, if any, follows.
 
 """
 
-DECLARE_BRIEF = """Using the scout's findings in the previous envelope, set up this project's validation declaration. You may ONLY touch adws/adw_data/validation/.
+DECLARE_BRIEF = """Using the scout's findings in the previous envelope, set up this project's validation declaration. Your write access is MECHANICALLY limited to adws/adw_data/validation/ — any change outside it is rolled back and fails the phase. If the app's CURRENT behaviour looks wrong (a bug your probe uncovers), do not fix the app and do not encode the wish: probe reality so the capture is honest, and name the suspected product bug in notes_for_next_agent — the engineer routes it to a `just build-validate` run, where fixing the app is the builder's actual job.
 
 1. Edit adws/adw_data/validation/validation.yaml: the real service command (argv list, never a shell string, bare binary names), a health_url that answers only when genuinely up, a startup_timeout_seconds a cold start fits inside, and set `enabled: true` — this run will prove it before anything is committed.
 2. Write one flow per journey worth evidence in adws/adw_data/validation/flows/, replacing or extending the stamped home.sh. Every flow: declared in validation.yaml (undeclared scripts never run and fail the library lint); opening lines carry `# Flow: <name> — <scenario it evidences>`; one journey per flow; MECHANICAL capture only, run with $BASE_URL and $EVIDENCE_DIR set and cwd = $EVIDENCE_DIR; save evidence there; exit non-zero on any checkable failure. agent-browser is the primary instrument (open, snapshot -i, get text @ref, screenshot — screenshots save to cwd); curl is the degrade path. Code enriches every screenshot afterwards (OCR sidecar, blank check, baseline drift), so capture, don't analyse. Judgement belongs to the validator, not the flow. Steps several flows share (a login, a seeded record) go in flows/lib/ with a `# Step: <name> — <what it does>` header and are `source`d by flows, never declared as flows themselves.
@@ -69,7 +76,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     with run.phase(PhaseParams(name="declare", kind="agent", owner="builder",
                                description="Write the validation declaration this run must then prove")) as ph:
         build = ph.call(AgentCall(output_type=BuildOutput, prompt=DECLARE_BRIEF + prompt,
-                                  previous=recon, gates=[gates.diff_matches_claims]))
+                                  previous=recon, writes=VALIDATION_WRITES,
+                                  gates=[gates.diff_matches_claims]))
 
     verdict = None
     for i in range(1, MAX_SETUP_LOOPS + 1):
@@ -134,14 +142,18 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         with run.phase(PhaseParams(name=f"revise_{i}", kind="agent", owner="builder", retries=1,
                                    description="Fix the declaration so the validation it describes can go green")) as ph:
             build = ph.call(AgentCall(output_type=BuildOutput, prompt=DECLARE_BRIEF + prompt,
-                                      previous=feedback, gates=[gates.diff_matches_claims]))
+                                      previous=feedback, writes=VALIDATION_WRITES,
+                                      gates=[gates.diff_matches_claims]))
 
     proven = verdict is not None and verdict.passed
     if proven:
         with run.phase(PhaseParams(name="commit", kind="code", owner="git",
                                    description="Commit the declaration only now that a green run has proven it")) as ph:
             message = build.commit_message or f"sssf({run.adw_id}): enable app validation"
-            ph.log(sha=git_helper.commit_all(message), message=message)
+            # Only the declaration — the enforced write bound makes this
+            # pathspec exact, and anything else dirty is the operator's.
+            ph.log(sha=git_helper.commit_paths(message, VALIDATION_WRITES),
+                   message=message)
 
     return run.finish(accepted=proven,
                       reason=f"the validation never went green after {MAX_SETUP_LOOPS} attempt(s); "

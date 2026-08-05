@@ -376,6 +376,12 @@ class AgentCall(BaseModel):
     prompt: str
     previous: Optional[EnvelopeBase] = None
     gates: list[Callable] = Field(default_factory=list)   # gate(envelope, run) -> list[str]
+    # Per-call narrowing of the agent's `writes` allowlist, enforced by
+    # permissions.enforce like the config-level list. An ADW that reuses a
+    # broad agent for a bounded job (the setup builder writing ONLY the
+    # validation declaration) states the bound here, in code — not in prose
+    # the model may drift from. None = the agent's own config applies.
+    writes: Optional[list[str]] = None
 
 
 # ── Config ───────────────────────────────────────────────────────────────────

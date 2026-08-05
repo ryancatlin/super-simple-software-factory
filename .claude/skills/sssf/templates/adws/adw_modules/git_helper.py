@@ -68,6 +68,26 @@ def commit_all(message: str) -> str:
     return _git("rev-parse", "--short", "HEAD")
 
 
+def commit_paths(message: str, paths: list[str]) -> str:
+    """Stage only `paths` (files or directory prefixes) and commit. Short sha.
+
+    The safe variant of commit_all for runs whose write surface is bounded in
+    code: when permissions.enforce guarantees an agent touched nothing outside
+    these paths, the pathspec IS the authoritative file list, and everything
+    else dirty in the tree is the operator's uncommitted work — theirs, not
+    the run's, and not for the run to sweep into its commit.
+    """
+    if not is_repo():
+        raise RuntimeError(
+            "not a git repository — a commit phase needs one. Run `git init` in the "
+            "repo root (and make a first commit) before running an ADW that commits.")
+    _git("add", "--", *paths)
+    if not _git("diff", "--cached", "--name-only"):
+        raise RuntimeError(f"nothing to commit under {paths}")
+    _git("commit", "-m", message, "--", *paths)
+    return _git("rev-parse", "--short", "HEAD")
+
+
 def changed_files() -> list[str]:
     out = _git("status", "--porcelain")
     return [line[3:] for line in out.splitlines() if line]

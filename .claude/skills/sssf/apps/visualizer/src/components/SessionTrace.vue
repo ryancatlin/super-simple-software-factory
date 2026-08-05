@@ -347,6 +347,28 @@ function blockGeom(p: Phase): { left: string; width: string } | null {
   return { left: `${geom.left}%`, width: `${geom.width}%` }
 }
 
+// Phase status is "did the phase machinery complete", not "did the app pass".
+// A validate phase succeeds by producing a coherent verdict — which may be a
+// red one. Surface that verdict on the block itself, so a green phase whose
+// envelope says passed=false reads amber at a glance instead of ✓.
+const verdictByPhase = computed(() => {
+  const map: Record<string, boolean> = {}
+  for (const e of envelopes.value) {
+    if (!e.phase_id || !e.payload_json) continue
+    try {
+      const payload = JSON.parse(e.payload_json) as Record<string, unknown>
+      if (typeof payload.passed === 'boolean') map[e.phase_id] = payload.passed
+    } catch {
+      // unparseable payloads simply carry no verdict
+    }
+  }
+  return map
+})
+
+function verdictFail(p: Phase): boolean {
+  return p.status === 'success' && verdictByPhase.value[p.phase_id] === false
+}
+
 function blockStyle(p: Phase, lane: Lane): Record<string, string> | undefined {
   const geom = blockGeom(p)
   if (!geom) return undefined
@@ -354,7 +376,12 @@ function blockStyle(p: Phase, lane: Lane): Record<string, string> | undefined {
     left: geom.left,
     width: geom.width,
     background: `linear-gradient(180deg, ${hexAlpha(lane.color, 0.2)}, ${hexAlpha(lane.color, 0.05)})`,
-    borderColor: p.status === 'fail' ? 'rgba(255, 111, 103, 0.8)' : hexAlpha(lane.color, 0.55),
+    borderColor:
+      p.status === 'fail'
+        ? 'rgba(255, 111, 103, 0.8)'
+        : verdictFail(p)
+          ? 'rgba(232, 182, 74, 0.8)'
+          : hexAlpha(lane.color, 0.55),
     '--lane-glow': hexAlpha(lane.color, 0.28),
   }
 }
@@ -497,14 +524,14 @@ function selectPhase(p: Phase) {
             <button
               v-if="blockGeom(p)"
               class="block"
-              :class="[p.status, { selected: p.phase_id === phaseId }]"
+              :class="[p.status, { selected: p.phase_id === phaseId, 'verdict-fail': verdictFail(p) }]"
               :style="blockStyle(p, lane)"
-              :title="`${p.name} — ${p.status}${p.description ? `\n${p.description}` : ''}`"
+              :title="`${p.name} — ${p.status}${verdictFail(p) ? ' (verdict: fail)' : ''}${p.description ? `\n${p.description}` : ''}`"
               @click="selectPhase(p)"
             >
               <span class="b-top">
-                <span class="b-status" :class="p.status">{{
-                  STATUS_GLYPH[p.status ?? ''] ?? '○'
+                <span class="b-status" :class="[p.status, { 'verdict-fail': verdictFail(p) }]">{{
+                  verdictFail(p) ? '✗' : (STATUS_GLYPH[p.status ?? ''] ?? '○')
                 }}</span>
                 <span class="b-name">{{ p.name }}</span>
                 <StatChip
@@ -802,6 +829,12 @@ function selectPhase(p: Phase) {
 
 .b-status.queued {
   color: var(--faint);
+}
+
+/* Phase succeeded, but the envelope's verdict is passed=false — the amber
+   between "machinery green" and "phase crashed". */
+.b-status.verdict-fail {
+  color: var(--amber);
 }
 
 .block .b-name {
