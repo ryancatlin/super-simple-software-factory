@@ -18,23 +18,7 @@ DEFAULT_FORK="$HOME/Documents/GitHub/super-simple-software-factory"
 REPO_URL="${SSSF_REPO:-https://github.com/ryancatlin/super-simple-software-factory.git}"
 BRANCH="${SSSF_BRANCH:-main}"
 
-if [ -d adws ]; then
-  echo "this repo already has a stamped factory (adws/ present). Update it"
-  echo "(keeps your edits, adds new files like the wait/kill scripts):"
-  echo "    just update"
-  echo "    # or: uv run <fork>/.claude/skills/sssf/scripts/update.py --source <fork>"
-  exit 1
-fi
-
-# A skill copy without a stamp is a partial/aborted install — refresh it so
-# the stamping below always runs the LATEST install.py (the skill dir is
-# framework, never user-owned; user edits live in adws/adw_data/).
-if [ -d .claude/skills/sssf ]; then
-  echo "[quickstart] refreshing stale skill copy..."
-  rm -rf .claude/skills/sssf
-fi
-
-# ── resolve the skill source ───────────────────────────────────────────────
+# ── resolve the skill source (before the guards — the adws/ branch needs it)
 SKILL_SRC="${SSSF_SOURCE:-}"
 if [ -z "$SKILL_SRC" ] && [ -d "$DEFAULT_FORK/.claude/skills/sssf" ]; then
   SKILL_SRC="$DEFAULT_FORK"
@@ -52,6 +36,32 @@ if [ -z "$SKILL_SRC" ]; then
   SKILL_SRC="$TMP_CLONE/fork"
 fi
 trap 'rm -rf "$TMP_CLONE"' EXIT
+
+if [ -d adws ] && [ -f .claude/skills/sssf/SKILL.md ]; then
+  echo "this repo already has a stamped factory (adws/ + skill present)."
+  echo "Update it (keeps your edits, adds new files):"
+  echo "    just update"
+  echo "    # or: uv run <fork>/.claude/skills/sssf/scripts/update.py --source <fork>"
+  exit 1
+fi
+
+# A fresh clone of a repo that committed adws/ but ignores the skill copy:
+# materialize the skill, nothing else (install.py would skip everything).
+if [ -d adws ]; then
+  echo "[quickstart] adws/ present, skill copy missing — materializing skill"
+  mkdir -p .claude/skills
+  cp -r "$SKILL_SRC/.claude/skills/sssf" .claude/skills/
+  echo "skill copy restored. Try:  just update   (or  just demo)"
+  exit 0
+fi
+
+# A skill copy without a stamp is a partial/aborted install — refresh it so
+# the stamping below always runs the LATEST install.py (the skill dir is
+# framework, never user-owned; user edits live in adws/adw_data/).
+if [ -d .claude/skills/sssf ]; then
+  echo "[quickstart] refreshing stale skill copy..."
+  rm -rf .claude/skills/sssf
+fi
 
 # ── stamp ──────────────────────────────────────────────────────────────────
 mkdir -p .claude/skills

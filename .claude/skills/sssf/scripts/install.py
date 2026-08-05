@@ -27,12 +27,16 @@ DEFAULT_REPO = "https://github.com/ryancatlin/super-simple-software-factory.git"
 DEFAULT_BRANCH = "main"
 MANIFEST_REL = "adws/adw_sssf_config/stamp_manifest.json"
 
-# Matches the upstream factory's intended setup (see disler/
-# super-simple-software-factory example branch .gitignore): the factory is
-# COMMITTED (adws/, .claude/skills/sssf/, justfile, .env.sample), only
-# runtime noise is ignored. Unanchored patterns so a trace db / node_modules
-# / dist are never committed wherever they turn up (e.g. the visualizer
-# under .claude/ after `just obs` bun-installs it).
+# The factory (adws/, justfile, .env.sample) is COMMITTED; only runtime
+# noise is ignored. Unanchored patterns so a trace db / node_modules / dist
+# are never committed wherever they turn up (e.g. the visualizer under
+# .claude/ after `just obs` bun-installs it).
+#
+# .claude/skills/sssf/ is IGNORED — deliberately diverging from upstream's
+# example branch, which must track it because it IS the skill repo and has
+# no updater. Here the skill copy is regenerable: quickstart materializes
+# it, update.py force-refreshes it, and the stamp manifest tracks its state
+# on disk. Committing it would churn ~100 files on every update.
 GITIGNORE_ENTRIES = [
     "adws/adw_data/sessions/",
     "sssf.db*",
@@ -40,6 +44,7 @@ GITIGNORE_ENTRIES = [
     "*.py[cod]",
     "node_modules/",
     "dist/",
+    ".claude/skills/sssf/",
     # env files are secrets, but the stamped .env.sample is meant to be
     # committed (it is a template, not a secret) — match upstream's
     # `!.env.example` / `!.env.sample` carve-outs.

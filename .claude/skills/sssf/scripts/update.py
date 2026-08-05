@@ -294,10 +294,10 @@ def _refresh_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
 
 def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
     gitignore = root / ".gitignore"
-    # Matches upstream's intended setup (example branch): factory committed,
-    # runtime noise ignored. Unanchored so node_modules/dist/sssf.db* are
-    # never committed wherever they turn up; .env.sample is re-included
-    # because it is a committed template, not a secret.
+    # Factory committed, runtime noise ignored; .claude/skills/sssf/ ignored
+    # because it is regenerable (quickstart materializes, update refreshes,
+    # the manifest tracks it) — committing it would churn ~100 files per
+    # update. .env.sample re-included: committed template, not a secret.
     entries = [
         "adws/adw_data/sessions/",
         "sssf.db*",
@@ -305,6 +305,7 @@ def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
         "*.py[cod]",
         "node_modules/",
         "dist/",
+        ".claude/skills/sssf/",
         ".env",
         ".env.*",
         "!.env.example",
