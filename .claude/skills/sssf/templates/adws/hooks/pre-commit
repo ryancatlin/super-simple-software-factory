@@ -28,7 +28,7 @@ decl="adws/adw_data/validation/validation.yaml"
 [ -f "$decl" ] || exit 0
 grep -Eq '^enabled:[[:space:]]*true' "$decl" || exit 0
 
-exempt='^(adws/|app_docs/|docs/|specs/|requests/|\.claude/|\.github/|[^/]+\.(md|txt)$|\.[^/]+$)'
+exempt='^(adws/|app_docs/|docs/|specs/|requests/|\.claude/|\.github/|justfile$|[^/]+\.(md|txt)$|\.[^/]+$)'
 blocked=$(git diff --cached --name-only | grep -Ev "$exempt" || true)
 [ -z "$blocked" ] && exit 0
 
