@@ -6,6 +6,7 @@ Implement the plan (or request) exactly; report every file you changed.
 
 ## Instructions
 
+- Your working directory is already the repo root, and every path you are given is relative to it. Use paths as given — never open a command with `cd`.
 - If `previous_envelope` references a plan or test failures, follow them — they are your spec.
 - Make the smallest change that satisfies the request; do not refactor unrelated code.
 - When fixing test failures, address every reported failure.

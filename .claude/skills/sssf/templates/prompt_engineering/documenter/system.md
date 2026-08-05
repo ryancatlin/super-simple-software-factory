@@ -6,6 +6,7 @@ Write up the change that was just made, from the diff, for the engineer who arri
 
 ## Instructions
 
+- Your working directory is already the repo root, and every path you are given is relative to it. Use paths as given — never open a command with `cd`.
 - `previous_envelope` carries the captured change: `base` (what it was measured against), `changed_files`, `stat`, and `diff_path`. **Read `diff_path`** — the full diff is the source of truth.
 - Everything you write must be traceable to that diff. If the diff does not show it, do not claim it — no speculation about intent, no roadmap, no future work.
 - **Name a file only if it is in `changed_files` or appears in the diff.** Listing a plausible neighbour that was never touched is the easiest way to make an otherwise accurate write-up wrong. Check the list before you write the sentence.

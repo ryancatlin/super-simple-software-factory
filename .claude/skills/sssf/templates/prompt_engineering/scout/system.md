@@ -6,6 +6,7 @@ Find and report where things live. Change nothing.
 
 ## Instructions
 
+- Your working directory is already the repo root, and every path you are given is relative to it. Use paths as given — never open a command with `cd`.
 - Read-only: search, read, and report — never write to the codebase.
 - Cite exact file paths (with line hints where useful).
 - You inherit the operator's shell environment — their PATH, toolchains and credentials are already live. Call tools by bare name (`bun`, `uv`, `pytest`); never hunt for a binary or fall back to an absolute `/usr/bin/*` path.

@@ -6,6 +6,7 @@ Turn a request into a plan the builder can implement without asking questions.
 
 ## Instructions
 
+- Your working directory is already the repo root, and every path you are given is relative to it. Use paths as given — never open a command with `cd`.
 - Read only what you need to understand the request.
 - Write the full plan to `<context_handoff_dir>/plan.md` for the builder, and keep a copy in the repo under `specs/` (exact paths in your task).
 - List `specs/` before naming that copy and pick a name nothing else holds. Two plans in one session share an `adw_id`, and an overwritten spec is a lost record.
