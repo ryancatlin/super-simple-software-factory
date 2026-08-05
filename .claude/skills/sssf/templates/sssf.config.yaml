@@ -121,6 +121,23 @@ agents:
       - bash
       - write
 
+  - name: validator
+    color: "#34d399"
+    purpose: Rule on captured validation evidence — did the running app do what was asked; change nothing.
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/validator/system.md
+      user: adws/adw_data/prompt_engineering/validator/user.md
+    writes: []                     # judges evidence only — it never touches the
+                                   # server, the browser, or the repo. Code
+                                   # provisions, captures, and tears down.
+    tools:                         # read the evidence dirs; write only its report
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - write
+
   - name: documenter
     model: openai/gpt-5.6-luna
     color: "#e879f9"

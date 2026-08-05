@@ -172,6 +172,90 @@ class QualityResult(BaseModel):
     artifacts: list[str] = Field(default_factory=list)
 
 
+# ── Validation (dev server + mechanical evidence capture, deterministic) ─────
+
+class ServiceSpec(BaseModel):
+    """The app under validation: how to start it and how to know it is up."""
+
+    command: list[str]              # argv, never a shell string
+    health_url: str                 # polled until it answers; also seeds BASE_URL
+    startup_timeout_seconds: int = 60
+    shutdown_grace_seconds: int = 10
+    env: dict[str, str] = Field(default_factory=dict)   # overrides ON TOP of operator_env
+
+
+class FlowSpec(BaseModel):
+    """One scripted capture flow — a known command, so it is code, not an agent."""
+
+    name: str
+    script: str                     # bash script path, run with BASE_URL + EVIDENCE_DIR set
+    timeout_seconds: int = 180
+
+
+class ValidationDecl(BaseModel):
+    """The project-owned validation declaration (adws/adw_data/validation/).
+
+    `enabled` defaults to False and STAYS False until the project's own
+    validation is set up and proven — a run that did not validate must never
+    read as validated. Disabled is reported as skipped, never as passed.
+    """
+
+    enabled: bool = False
+    service: Optional[ServiceSpec] = None
+    flows: list[FlowSpec] = Field(default_factory=list)
+
+
+class FlowResult(BaseModel):
+    """Captured evidence from one flow script."""
+
+    name: str
+    command: str
+    returncode: int
+    passed: bool
+    duration_seconds: float
+    evidence_dir: str               # every file the flow left behind lives here
+    output_tail: str = ""           # verbatim, like QualityCheckResult — no parsing
+
+
+class CaptureResult(BaseModel):
+    """Aggregate result of the mechanical capture pass: every flow, one verdict."""
+
+    passed: bool
+    base_url: str
+    flows: list[FlowResult] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+
+
+class CaptureOutput(EnvelopeBase):
+    """A CaptureResult shaped as an envelope so the validator can consume it.
+
+    Same adapter idea as VerifyOutput: code drives the browser and captures the
+    evidence; the validator only reads it and rules. The one door, again.
+    """
+
+    passed: bool = False
+    base_url: str = ""
+    evidence_dirs: list[str] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)
+
+
+class ScenarioVerdict(BaseModel):
+    """One validated scenario and whether the evidence supports it."""
+
+    scenario: str                   # what was checked, in plain words
+    passed: bool
+    evidence: str = ""              # the file that shows it, or what is missing
+
+
+class ValidateOutput(EnvelopeBase):
+    """The validator's ruling on captured evidence — it never touches the app."""
+
+    passed: bool = False
+    scenarios: list[ScenarioVerdict] = Field(default_factory=list)
+    blocking: list[str] = Field(default_factory=list)   # what must change before it can pass
+
+
 # ── Change capture (git diff, deterministic) ─────────────────────────────────
 
 class ChangeCapture(BaseModel):

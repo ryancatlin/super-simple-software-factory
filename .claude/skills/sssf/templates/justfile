@@ -60,6 +60,23 @@ sdlc *ARGS:
 simple-sdlc *ARGS:
     uv run adws/adw_simple_sdlc.py --config {{config}} "$@"
 
+# ── validate the running app ────────────────────────────────────────────────
+# Needs adws/adw_data/validation/ set up and enabled first (see
+# cookbooks/setup_validation.md) — until then both report skipped-and-red.
+
+# the factory sets up this project's validation itself, proves it green, then
+# commits it: just setup-validation "the journeys that matter are ..."
+setup-validation *ARGS:
+    uv run adws/adw_setup_validation.py --config {{config}} "$@"
+
+# provision, capture evidence, rule on it, teardown: just validate "the home page renders"
+validate *ARGS:
+    uv run adws/adw_validate.py --config {{config}} "$@"
+
+# build, then prove the running app behaves, bounded fix loop: just build-validate "..."
+build-validate *ARGS:
+    uv run adws/adw_build_validate.py --config {{config}} "$@"
+
 # ── watch it ────────────────────────────────────────────────────────────────
 # Reads never block a running workflow, the db is WAL. Poll as hard as you like.
 

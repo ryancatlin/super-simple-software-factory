@@ -112,6 +112,13 @@ def main() -> int:
     stamp(TEMPLATES / "harness_engineering",
           root / "adws" / "adw_data" / "harness_engineering", args.force,
           stamped, skipped, manifest_files)
+    # Validation declaration: stamped DISABLED, user-owned like the prompts.
+    # The machinery (adw_modules/services.py) runs it; this is only the
+    # per-project "what to start, what to capture" — yours (or a factory
+    # run's) to fill in via cookbooks/setup_validation.md.
+    stamp(TEMPLATES / "validation",
+          root / "adws" / "adw_data" / "validation", args.force,
+          stamped, skipped, manifest_files)
     stamp(TEMPLATES / "sssf.config.yaml",
           root / "adws" / "adw_sssf_config" / "sssf.config.yaml",
           args.force, stamped, skipped, manifest_files)

@@ -51,6 +51,7 @@ You run the system, observe the system, and help the user interact with it. **Yo
 | modify an existing ADW chain | [cookbooks/update_adw.md](cookbooks/update_adw.md) |
 | create the config / agent roster | [cookbooks/create_config.md](cookbooks/create_config.md) |
 | add or retune an agent (model, thinking, tools, prompts) | [cookbooks/update_config.md](cookbooks/update_config.md) |
+| set up app validation (dev server + captured evidence + validator ruling) | [cookbooks/setup_validation.md](cookbooks/setup_validation.md) |
 | extend adw_modules with new low-level logic | [cookbooks/update_modules.md](cookbooks/update_modules.md) |
 | run / monitor an ADW | [cookbooks/how_to_prompt_for_the_eng.md](cookbooks/how_to_prompt_for_the_eng.md) **first**, then [cookbooks/run_adw.md](cookbooks/run_adw.md) |
 | turn a request into an ADW prompt | [cookbooks/how_to_prompt_for_the_eng.md](cookbooks/how_to_prompt_for_the_eng.md) |

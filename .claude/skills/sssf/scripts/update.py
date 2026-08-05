@@ -46,6 +46,7 @@ USER_OWNED = (
     "adws/adw_sssf_config/sssf.config.yaml",
     "adws/adw_data/prompt_engineering",
     "adws/adw_data/harness_engineering",
+    "adws/adw_data/validation",
     ".env",
 )
 
@@ -110,6 +111,7 @@ def update_tree(skill: Path, root: Path, manifest: dict, dry: bool,
         ("adws", "adws"),
         ("prompt_engineering", "adws/adw_data/prompt_engineering"),
         ("harness_engineering", "adws/adw_data/harness_engineering"),
+        ("validation", "adws/adw_data/validation"),
         ("sssf.config.yaml", "adws/adw_sssf_config/sssf.config.yaml"),
         ("env.sample", ".env.sample"),
         ("justfile", "justfile"),

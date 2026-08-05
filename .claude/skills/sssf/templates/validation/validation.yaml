@@ -1,0 +1,43 @@
+# validation.yaml — this project's validation declaration. YOURS to edit.
+#
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║  DISABLED ON PURPOSE. A run that did not validate must never read as       ║
+# ║  validated, so this ships `enabled: false` and validation ADWs report      ║
+# ║  "skipped (not configured)" — grey, never green — until YOU (or a factory  ║
+# ║  run following cookbooks/setup_validation.md) wire the real service and    ║
+# ║  flows below and flip `enabled: true` after one proven run.               ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+#
+# The split that makes this agent-buildable: this file and flows/ are
+# USER-OWNED and agent-writable (update never overwrites them; the builder may
+# edit them). The machinery that executes them — adw_modules/services.py — is
+# protected. Agent proposes the declaration, code executes it.
+#
+# Walk-away rules, enforced by services.py, not by this file:
+#   every step has a deadline; the server pid is registered in the trace's
+#   `processes` table before the health wait (so `just kill <adw_id>` always
+#   works); teardown runs in a `finally` and verifies the port actually freed.
+
+enabled: false
+
+service:
+  # argv list, never a shell string. Runs from the repo root with YOUR shell
+  # environment (see utils.operator_env) — call binaries by bare name.
+  command: ["npm", "run", "dev"]
+  # Polled until it answers (<500) or startup_timeout_seconds elapses — then
+  # the provision phase fails fast with the server's own log tail. Its origin
+  # also becomes $BASE_URL for every flow.
+  health_url: "http://localhost:3000/"
+  startup_timeout_seconds: 60
+  shutdown_grace_seconds: 10
+  # env: { PORT: "3000" }          # overrides ON TOP of your shell env
+
+# Flows are MECHANICAL evidence capture — bash scripts run by code, not by an
+# agent (hard rule 8: a known command is code). Each runs from its own
+# evidence dir with $BASE_URL and $EVIDENCE_DIR set; whatever it saves there
+# (screenshots, response bodies, logs) is what the validator agent rules on.
+# Same evidence every run, red or green.
+flows:
+  - name: home
+    script: adws/adw_data/validation/flows/home.sh
+    timeout_seconds: 180

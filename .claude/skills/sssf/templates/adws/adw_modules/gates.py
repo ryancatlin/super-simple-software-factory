@@ -95,6 +95,37 @@ def verdict_consistent(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def validation_verdict_consistent(envelope: EnvelopeBase, run) -> GateReport:
+    """A validation verdict must agree with the scenarios it just ruled on.
+
+    Same idea as verdict_consistent: nothing here judges the app — that is the
+    validator's job. This refutes self-contradictory envelopes without opening
+    a single screenshot: a pass with failed scenarios, or a fail that names no
+    failed scenario and no blocking item, is a claim the harness can reject.
+    """
+    report = GateReport()
+    passed = bool(getattr(envelope, "passed", False))
+    blocking = list(getattr(envelope, "blocking", []))
+    failed = [s.scenario for s in getattr(envelope, "scenarios", []) if not s.passed]
+
+    report.check("passed vs scenarios", not (passed and failed),
+                 "every scenario passed" if not failed
+                 else f"{len(failed)} failed scenario(s) while passed=true"
+                 if passed else f"{len(failed)} failed scenario(s), not passed")
+    report.check("passed vs blocking", not (passed and blocking),
+                 "no blocking items" if not blocking
+                 else f"{len(blocking)} blocking item(s) while passed=true"
+                 if passed else f"{len(blocking)} blocking item(s), not passed")
+    report.check("failure names a problem", passed or bool(failed or blocking),
+                 "verdict is supported" if passed or failed or blocking
+                 else "passed=false but no failed scenario or blocking item was given")
+    report.check("scenarios were ruled on", bool(getattr(envelope, "scenarios", [])),
+                 f"{len(getattr(envelope, 'scenarios', []))} scenario(s)"
+                 if getattr(envelope, "scenarios", [])
+                 else "no scenarios ruled on — a verdict with no rulings verified nothing")
+    return report
+
+
 def tests_pass(command: str):
     """Gate factory: the given shell command must exit 0."""
     def gate(envelope: EnvelopeBase, run) -> GateReport:
