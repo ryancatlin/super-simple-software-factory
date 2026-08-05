@@ -15,7 +15,7 @@ from typing import Optional
 
 import yaml
 
-from . import agent_pi, permissions, prompts
+from . import agent_cc, agent_pi, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, EnvelopeBase, EventRecord,
                          GateCheck, GateReport, Phase, PiRequest, SSSFConfig,
                          UsageBreakdown)
@@ -58,17 +58,18 @@ def validate(cfg: SSSFConfig, required: list[str]) -> None:
         except SystemExit as e:
             problems.append(str(e))
             continue
-        if agent.coding_agent != "pi":
+        if agent.coding_agent not in ("pi", "claude_code"):
             problems.append(f"agent {name!r}: coding_agent {agent.coding_agent!r} "
-                            f"is not implemented in v1 (pi only)")
+                            f"is unknown (pi | claude_code)")
         for label, ref in (("system", agent.prompt_engineering.system),
                            ("user", agent.prompt_engineering.user)):
             if not Path(ref).is_file():
                 problems.append(f"agent {name!r}: {label} prompt not found: {ref}")
-        try:
-            agent_pi.resolve_model(agent.model)
-        except ValueError as e:
-            problems.append(f"agent {name!r}: {e}")
+        if agent.coding_agent == "pi":
+            try:
+                agent_pi.resolve_model(agent.model)
+            except ValueError as e:
+                problems.append(f"agent {name!r}: {e}")
     if problems:
         raise SystemExit("config validation failed:\n- " + "\n- ".join(problems))
 
@@ -111,26 +112,47 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
     def send(prompt_text: str) -> agent_pi.PiResult:
         nonlocal latest
-        request = PiRequest(
-            prompt=prompt_text,
-            system_prompt=system_text,
-            model=agent.model,
-            thinking=agent.thinking,
-            session_id=session_id,
-            # absolute: these are read by the pi subprocess, which runs in repo_root
-            session_dir=str((agent_dir / "pi_sessions").resolve()),
-            raw_output_path=str((agent_dir / "raw_output.jsonl").resolve()),
-            tools=agent.tools,
-            extensions=agent.harness_engineering,
-            cwd=str(run.repo_root),
-        )
-        result = agent_pi.run(
-            request,
-            on_event=_event_forwarder(run, phase, agent.name),
-            on_spawn=lambda pid: run.tracer.process_start(
-                run.adw_id, "agent", agent.name, pid,
-                f"{agent.coding_agent} {agent.name} {agent.model}"),
-            on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+        if agent.coding_agent == "claude_code":
+            request = agent_cc.ClaudeRequest(
+                prompt=prompt_text,
+                system_prompt=system_text,
+                model=agent.model,
+                thinking=agent.thinking,
+                # claude session id from a prior result event (agent_map), or ""
+                # for a fresh run. Absolute raw path: read by the subprocess.
+                session_id=session_id,
+                cwd=str(run.repo_root),
+                raw_output_path=str((agent_dir / "raw_output.jsonl").resolve()),
+                tools=agent.tools,
+            )
+            result = agent_cc.run(
+                request,
+                on_event=_event_forwarder(run, phase, agent),
+                on_spawn=lambda pid: run.tracer.process_start(
+                    run.adw_id, "agent", agent.name, pid,
+                    f"{agent.coding_agent} {agent.name} {agent.model}"),
+                on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+        else:
+            request = PiRequest(
+                prompt=prompt_text,
+                system_prompt=system_text,
+                model=agent.model,
+                thinking=agent.thinking,
+                session_id=session_id,
+                # absolute: these are read by the pi subprocess, which runs in repo_root
+                session_dir=str((agent_dir / "pi_sessions").resolve()),
+                raw_output_path=str((agent_dir / "raw_output.jsonl").resolve()),
+                tools=agent.tools,
+                extensions=agent.harness_engineering,
+                cwd=str(run.repo_root),
+            )
+            result = agent_pi.run(
+                request,
+                on_event=_event_forwarder(run, phase, agent),
+                on_spawn=lambda pid: run.tracer.process_start(
+                    run.adw_id, "agent", agent.name, pid,
+                    f"{agent.coding_agent} {agent.name} {agent.model}"),
+                on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
         run.add_usage(result.tokens, result.cost)
         spent.merge(result.usage)
         latest = result
@@ -229,11 +251,26 @@ def _agent_session_id(run, agent: AgentConfig) -> str:
     entry = run.agent_map.get(agent.name)
     if entry and entry.get("model") == agent.model:
         return entry["session_id"]           # rejoin the existing context window
+    # Fresh run. pi wants an arbitrary id (create-or-continue); claude wants ""
+    # so agent_cc mints a real claude session via --session-id and returns it.
+    if agent.coding_agent == "claude_code":
+        return ""
     return f"sssf-{run.adw_id}-{agent.name}-{new_id(4)}"
 
 
-def _event_forwarder(run, phase: Phase, agent_name: str):
+def _event_forwarder(run, phase: Phase, agent: AgentConfig):
     """One tool_call event per real tool call, with its exact args and result."""
+    if agent.coding_agent == "claude_code":
+        # agent_cc synthesizes complete tool_call records itself (claude's
+        # stream has no pi-style tool_execution_end to fold). Pass them through.
+        def forward_claude(event: dict) -> None:
+            if event.get("type") == "tool_call":
+                run.tracer.event(EventRecord(
+                    adw_id=run.adw_id, phase_id=phase.phase_id,
+                    type="tool_call", name=event.get("label", "tool"),
+                    payload={**event, "agent": agent.name}))
+        return forward_claude
+
     tracker = agent_pi.ToolCallTracker()
 
     def forward(event: dict) -> None:
@@ -246,7 +283,7 @@ def _event_forwarder(run, phase: Phase, agent_name: str):
                                      type="tool_call", name=record.pop("label"),
                                      started_at=record.pop("started_at", None),
                                      ended_at=record.pop("ended_at", None),
-                                     payload={**record, "agent": agent_name}))
+                                     payload={**record, "agent": agent.name}))
     return forward
 
 
