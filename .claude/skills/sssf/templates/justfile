@@ -56,7 +56,7 @@ plan-build *ARGS:
 sdlc *ARGS:
     uv run adws/adw_plan_build_test.py --config {{config}} "$@"
 
-# the full chain, plus review and docs: just simple-sdlc "add a /health endpoint"
+# the full chain: review, docs, and app validation when a declaration is enabled
 simple-sdlc *ARGS:
     uv run adws/adw_simple_sdlc.py --config {{config}} "$@"
 

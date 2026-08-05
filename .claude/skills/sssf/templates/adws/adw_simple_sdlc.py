@@ -11,6 +11,9 @@ Phases: engineer(request) -> planner -> git(commit_plan)
         -> builder -> code(test) [-> builder(fix) -> code(test) ... bounded]
         -> reviewer [-> builder(revise) -> reviewer ... bounded]
         -> code(retest, only if a revision changed code)
+        -> [code(provision) -> code(capture) -> validator -> code(teardown),
+            only when adws/adw_data/validation/ is enabled; a visible
+            validate_skipped otherwise]
         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
 
 Three commits, three work products, three authors. The plan, the code, and the
@@ -24,11 +27,18 @@ an agent rediscovering it every run costs a million tokens to learn what a
 subprocess already knows. Failures travel back to the builder as an envelope,
 so the repair loop is unchanged — only the runner became free and repeatable.
 
-Two different questions still get asked, in order. The suite asks "does it
-run"; the reviewer asks "is this what was asked for", against `plan.md` — and
-neither can answer the other's. A revision that closes a review finding
-re-enters the suite, so the tree that gets committed is the tree that was both
-tested and approved.
+Three different questions get asked, in order. The suite asks "does it run";
+the reviewer asks "is this what was asked for", against `plan.md`; validation
+asks "does the running app behave" — and none can answer another's. A revision
+that closes a review finding re-enters the suite, so the tree that gets
+committed is the tree that was both tested and approved.
+
+Validation gates the commit only when the project has declared it (enabled
+adws/adw_data/validation/ — see cookbooks/setup_validation.md). Without a
+declaration the chain stays useful and skips VISIBLY: a `validate_skipped`
+phase in the trace, never a silent green. It is one-shot here — a red verdict
+stops the commit and the working tree holds the attempt; `just build-validate`
+is the fix-until-green shape.
 
 The code commit lands after verification, not straight after the build: fixes
 and revisions are part of the same work product, and red code has no business
@@ -44,10 +54,12 @@ pinned before the first commit phase and printed in the request phase.
 import argparse
 import sys
 
-from adw_modules import agents, changes, gates, git_helper, quality, session, utils
+from adw_modules import (agents, changes, gates, git_helper, quality, services,
+                         session, utils)
 from adw_modules.data_types import (AgentCall, BuildOutput, ChangeCapture,
                                     DocumentOutput, PhaseParams, PlanOutput,
-                                    ReviewOutput)
+                                    ReviewOutput, ValidateOutput)
+from adw_validate import declaration_gap
 
 REQUIRED_AGENTS = ["planner", "builder", "reviewer", "documenter"]
 MAX_FIX_LOOPS = 3
@@ -60,7 +72,12 @@ DOCUMENT_NOTES = ("Read diff_path in full before writing. Document only what the
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
     cfg = agents.load_config(config)
-    agents.validate(cfg, REQUIRED_AGENTS)
+    # The declaration this run starts under decides whether validation gates
+    # the commit — and whether the roster must hold a validator. Pinned here:
+    # a mid-run edit to the declaration never changes what this run enforces.
+    decl = services.load_declaration()
+    validation_on = decl is not None and decl.enabled
+    agents.validate(cfg, REQUIRED_AGENTS + (["validator"] if validation_on else []))
     run = session.ensure(cfg, adw_id)
     baseline = git_helper.rev("HEAD")     # pinned before this run commits anything
 
@@ -142,9 +159,64 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     # describing yet. The plan commit stands — it is a record of what was asked.
     verified = (test is not None and test.passed
                 and review is not None and review.approved)
-    if verified:
+
+    # The third question — does the RUNNING app behave — asked only when the
+    # project declared validation. One shot: a red verdict stops the commit
+    # and the tree holds the attempt (build-validate is the fix loop). A
+    # project without a declaration skips VISIBLY and continues; a declaration
+    # that is enabled but cannot run is a broken promise and fails.
+    validated = not validation_on
+    if verified and validation_on:
+        gap = declaration_gap(decl)
+        if gap:
+            with run.phase(PhaseParams(name="validate_skipped", kind="code", owner="service",
+                                       description="Record that declared validation could not run — an enabled declaration that cannot execute must fail, not pass")) as ph:
+                ph.log(status="skipped", reason=gap,
+                       next_step="see cookbooks/setup_validation.md")
+        else:
+            handle = None
+            torn_down = False
+            verdict = None
+            try:
+                with run.phase(PhaseParams(name="provision", kind="code", owner="service",
+                                           description="Start the declared service and wait for health, with a hard deadline")) as ph:
+                    handle = services.start(run, decl.service)
+                    ph.log(pid=handle.process.pid, health_url=decl.service.health_url)
+
+                with run.phase(PhaseParams(name="capture", kind="code", owner="service",
+                                           description="Drive the declared flows mechanically and save identical evidence red or green")) as ph:
+                    capture = services.capture(run, decl)
+                    ph.log(flows=len(capture.flows), passed=capture.passed,
+                           failures=len(capture.failures))
+
+                with run.phase(PhaseParams(name="validate", kind="agent", owner="validator",
+                                           description="Rule on the captured evidence: does the running app do what was asked")) as ph:
+                    verdict = ph.call(AgentCall(output_type=ValidateOutput, prompt=prompt,
+                                                previous=services.as_envelope(capture),
+                                                gates=[gates.artifacts_exist,
+                                                       gates.validation_verdict_consistent]))
+
+                with run.phase(PhaseParams(name="teardown", kind="code", owner="service",
+                                           description="Stop the service children-first and verify its port actually freed")) as ph:
+                    torn_down = True
+                    ph.log(port_freed=services.stop(run, handle))
+            finally:
+                if handle is not None and not torn_down:
+                    services.stop(run, handle)   # crash and kill paths leave no orphan
+            validated = verdict is not None and verdict.passed
+    elif verified:
+        # No declaration (or disabled): the chain stays useful, but the skip is
+        # on the record — a run that did not validate must never read as if it did.
+        with run.phase(PhaseParams(name="validate_skipped", kind="code", owner="service",
+                                   description="Record that this project has no enabled validation declaration")) as ph:
+            ph.log(status="skipped",
+                   reason="no enabled declaration" if decl is None or not decl.enabled else "",
+                   next_step="just setup-validation")
+
+    if verified and validated:
         with run.phase(PhaseParams(name="commit_build", kind="code", owner="git",
-                                   description="Land the code only now: green suite, approved review")) as ph:
+                                   description="Land the code only now: green suite, approved review"
+                                               + (", validated app" if validation_on else ""))) as ph:
             commit(ph, build)
 
         with run.phase(PhaseParams(name="changes", kind="code", owner="git",
@@ -170,8 +242,10 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                    description="Ship the write-up in its own commit, beside the code it describes")) as ph:
             commit(ph, document)
 
-    return run.finish(accepted=verified,
-                      reason="the suite or the review never came back clean")
+    return run.finish(accepted=verified and validated,
+                      reason=("the suite or the review never came back clean" if not verified
+                              else "declared validation did not come back green — nothing was "
+                                   "committed; the working tree holds the attempt"))
 
 
 if __name__ == "__main__":

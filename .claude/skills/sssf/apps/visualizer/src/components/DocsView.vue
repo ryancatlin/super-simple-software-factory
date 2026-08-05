@@ -39,7 +39,7 @@ const GROUPS: Group[] = [
       { cmd: 'just plan', what: 'Plan only — a spec the builder could implement without questions.', example: 'just plan "add a /health endpoint"' },
       { cmd: 'just plan-build', what: 'Planner, then builder, then commit.', example: 'just plan-build "add a /health endpoint"' },
       { cmd: 'just sdlc', what: 'Plan, build, test, commit.', example: 'just sdlc "add a /health endpoint"' },
-      { cmd: 'just simple-sdlc', what: 'The full chain, plus review and docs.', example: 'just simple-sdlc "add a /health endpoint"' },
+      { cmd: 'just simple-sdlc', what: 'The full chain: review, docs, and — when a validation declaration is enabled — the running app must validate green before the code commits.', example: 'just simple-sdlc "add a /health endpoint"' },
     ],
   },
   {
