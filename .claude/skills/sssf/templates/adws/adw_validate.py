@@ -102,7 +102,10 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("prompt", help="inline text or a path to a prompt file")
+    # Optional: bare `just validate` means "the declared journeys behave".
+    parser.add_argument("prompt", nargs="?",
+                        default="Every declared flow's journey completes and the captured evidence shows the app behaving.",
+                        help="inline text or a path to a prompt file (optional)")
     parser.add_argument("--config", default="adws/adw_sssf_config/sssf.config.yaml")
     parser.add_argument("--adw-id", default=None, help="join or pin an existing session")
     args = parser.parse_args()
