@@ -18,13 +18,20 @@ DEFAULT_FORK="$HOME/Documents/GitHub/super-simple-software-factory"
 REPO_URL="${SSSF_REPO:-https://github.com/ryancatlin/super-simple-software-factory.git}"
 BRANCH="${SSSF_BRANCH:-main}"
 
-if [ -f .claude/skills/sssf/SKILL.md ] || [ -d adws ]; then
-  echo "this repo looks like it already has the factory (adws/ or"
-  echo ".claude/skills/sssf present). If it is an OLD install, update it"
+if [ -d adws ]; then
+  echo "this repo already has a stamped factory (adws/ present). Update it"
   echo "(keeps your edits, adds new files like the wait/kill scripts):"
-  echo "    uv run ~/Documents/GitHub/super-simple-software-factory/.claude/skills/sssf/scripts/update.py --source ~/Documents/GitHub/super-simple-software-factory"
-  echo "    # or once update.py is in place:  just update"
+  echo "    just update"
+  echo "    # or: uv run <fork>/.claude/skills/sssf/scripts/update.py --source <fork>"
   exit 1
+fi
+
+# A skill copy without a stamp is a partial/aborted install — refresh it so
+# the stamping below always runs the LATEST install.py (the skill dir is
+# framework, never user-owned; user edits live in adws/adw_data/).
+if [ -d .claude/skills/sssf ]; then
+  echo "[quickstart] refreshing stale skill copy..."
+  rm -rf .claude/skills/sssf
 fi
 
 # ── resolve the skill source ───────────────────────────────────────────────

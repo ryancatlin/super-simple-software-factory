@@ -27,20 +27,26 @@ DEFAULT_REPO = "https://github.com/ryancatlin/super-simple-software-factory.git"
 DEFAULT_BRANCH = "main"
 MANIFEST_REL = "adws/adw_sssf_config/stamp_manifest.json"
 
+# Matches the upstream factory's intended setup (see disler/
+# super-simple-software-factory example branch .gitignore): the factory is
+# COMMITTED (adws/, .claude/skills/sssf/, justfile, .env.sample), only
+# runtime noise is ignored. Unanchored patterns so a trace db / node_modules
+# / dist are never committed wherever they turn up (e.g. the visualizer
+# under .claude/ after `just obs` bun-installs it).
 GITIGNORE_ENTRIES = [
     "adws/adw_data/sessions/",
-    "adws/adw_data/sssf.db*",
-    ".env",
-    # The ADWs are Python, so importing adw_modules writes bytecode next to it.
-    # Chains that end in a commit phase call `git add -A`, so without this a
-    # stamped repo commits its own .pyc files — 15 of them showed up in the
-    # first repo that was ever installed into from scratch.
+    "sssf.db*",
     "__pycache__/",
-    "*.pyc",
-    # `just obs` bun-installs the visualizer; node_modules/dist are build
-    # artifacts, never part of the stamped factory.
-    ".claude/skills/sssf/apps/visualizer/node_modules/",
-    ".claude/skills/sssf/apps/visualizer/dist/",
+    "*.py[cod]",
+    "node_modules/",
+    "dist/",
+    # env files are secrets, but the stamped .env.sample is meant to be
+    # committed (it is a template, not a secret) — match upstream's
+    # `!.env.example` / `!.env.sample` carve-outs.
+    ".env",
+    ".env.*",
+    "!.env.example",
+    "!.env.sample",
 ]
 
 

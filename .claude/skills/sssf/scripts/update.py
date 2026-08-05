@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -293,11 +294,21 @@ def _refresh_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
 
 def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
     gitignore = root / ".gitignore"
+    # Matches upstream's intended setup (example branch): factory committed,
+    # runtime noise ignored. Unanchored so node_modules/dist/sssf.db* are
+    # never committed wherever they turn up; .env.sample is re-included
+    # because it is a committed template, not a secret.
     entries = [
-        "adws/adw_data/sessions/", "adws/adw_data/sssf.db*", ".env",
-        "__pycache__/", "*.pyc",
-        ".claude/skills/sssf/apps/visualizer/node_modules/",
-        ".claude/skills/sssf/apps/visualizer/dist/",
+        "adws/adw_data/sessions/",
+        "sssf.db*",
+        "__pycache__/",
+        "*.py[cod]",
+        "node_modules/",
+        "dist/",
+        ".env",
+        ".env.*",
+        "!.env.example",
+        "!.env.sample",
     ]
     existing = gitignore.read_text().splitlines() if gitignore.exists() else []
     missing = [e for e in entries if e not in existing]
@@ -366,6 +377,21 @@ def main() -> int:
 
     skill = fetch_source(args)
     if not args.dry_run:
+        # Self-heal: if the updater running here is older than the one in
+        # the fetched source (updater changed mid-project-life), re-exec the
+        # source's copy BEFORE doing any work, so the new logic (pi wiring,
+        # gitignore, manifest keys) runs in THIS invocation — one `just
+        # update`, always converges. The fresh copy finds itself current and
+        # does not re-exec. Runs from the fetched cache dir; cwd and args
+        # are preserved.
+        running = Path(__file__).resolve()
+        src_updater = (skill / "scripts" / "update.py").resolve()
+        if (running != src_updater and src_updater.is_file()
+                and sha256(src_updater) != sha256(running)):
+            print("[update] updater is stale — re-running as the fresh copy")
+            sys.stdout.flush()   # execv replaces the process; don't lose the line
+            os.execv(sys.executable, [sys.executable, str(src_updater)]
+                     + sys.argv[1:])
         update_tree(skill, root, manifest, False, report)
         manifest["stamped_at"] = datetime.now(timezone.utc).isoformat()
         manifest["source"] = {"repo": args.repo or DEFAULT_REPO,
