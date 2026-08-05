@@ -247,6 +247,20 @@ def capture(run, decl: ValidationDecl) -> CaptureResult:
     )
 
 
+def _rel(path: str) -> str:
+    """Repo-relative when the path is under the repo, else unchanged.
+
+    Execution keeps absolute paths (a flow's cwd IS its evidence dir), but
+    agents run from the repo root — handing them absolute paths just makes
+    every model open its bash calls with a needless `cd`. Relativize at the
+    handoff door, nowhere else.
+    """
+    try:
+        return str(Path(path).resolve().relative_to(Path.cwd().resolve()))
+    except ValueError:
+        return path
+
+
 def as_envelope(result: CaptureResult) -> CaptureOutput:
     """Shape the capture for the validator — the one door every handoff uses."""
     return CaptureOutput(
@@ -255,14 +269,15 @@ def as_envelope(result: CaptureResult) -> CaptureOutput:
                  else f"capture: flow library lint failed ({len(result.failures)} violation(s))"
                  if not result.flows
                  else f"capture: {len(result.failures)} of {len(result.flows)} flow(s) failed"),
-        artifacts=result.artifacts,
+        artifacts=[_rel(a) for a in result.artifacts],
         notes_for_next_agent=(
             "Read every evidence dir below — flow.log for what ran, plus any "
             "screenshots and response bodies the flow saved. Rule on the "
-            "evidence, never on this summary."),
+            "evidence, never on this summary. Paths are relative to the repo "
+            "root, which is already your working directory — no cd needed."),
         passed=result.passed,
         base_url=result.base_url,
-        evidence_dirs=[r.evidence_dir for r in result.flows],
+        evidence_dirs=[_rel(r.evidence_dir) for r in result.flows],
         failures=result.failures,
     )
 
