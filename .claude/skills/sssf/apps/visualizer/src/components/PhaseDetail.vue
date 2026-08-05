@@ -13,6 +13,7 @@ import {
   Activity,
   AlignLeft,
   Brain,
+  Camera,
   Fingerprint,
   Inbox,
   MessagesSquare,
@@ -26,7 +27,14 @@ import { fmtClock, payloadOk, ts } from '../lib/format'
 import { highlightJson, highlightJsonText } from '../lib/highlight'
 import { eventLabel, parseAgentStart, parseToolCall } from '../lib/events'
 import { modelIcon, modelName } from '../lib/models'
-import { fetchPrompts, type PromptsResponse } from '../lib/api'
+import {
+  evidenceFileUrl,
+  fetchEvidence,
+  fetchPrompts,
+  type EvidenceFile,
+  type EvidenceResponse,
+  type PromptsResponse,
+} from '../lib/api'
 import { renderMarkdown } from '../lib/markdown'
 import StatusChip from './StatusChip.vue'
 import StatChip from './StatChip.vue'
@@ -310,6 +318,83 @@ watch(
   { immediate: true },
 )
 
+// ── Validation evidence ──────────────────────────────────────────────────────
+// Capture phases record each flow as a `flow:*` tool_call whose payload names
+// its evidence_dir. The panel shows exactly those dirs: screenshots and diffs
+// inline, sidecars (OCR, page text, toolkit.txt) as one-click text tabs.
+
+const evidence = ref<EvidenceResponse | null>(null)
+
+// The dirs THIS phase's flows wrote, by basename (e.g. "02_vision").
+const phaseFlowDirs = computed<Set<string>>(() => {
+  const dirs = new Set<string>()
+  for (const e of phaseEvents.value) {
+    if (e.type !== 'tool_call' || !e.name?.startsWith('flow:') || !e.payload_json) continue
+    try {
+      const p = JSON.parse(e.payload_json) as { evidence_dir?: unknown }
+      if (typeof p.evidence_dir === 'string' && p.evidence_dir) {
+        dirs.add(p.evidence_dir.replace(/\/+$/, '').split('/').pop() ?? '')
+      }
+    } catch {
+      /* not JSON — skip */
+    }
+  }
+  dirs.delete('')
+  return dirs
+})
+
+// Evidence is on disk, not in the db — refetch per phase selection so a
+// mid-run capture shows what exists right now. No listing = no section.
+watch(
+  () => [props.phase.phase_id, phaseFlowDirs.value.size] as const,
+  async ([, flowCount]) => {
+    if (!flowCount) {
+      evidence.value = null
+      return
+    }
+    try {
+      evidence.value = await fetchEvidence(props.phase.adw_id)
+    } catch {
+      evidence.value = null
+    }
+  },
+  { immediate: true },
+)
+
+interface EvidencePanelRow {
+  dir: string
+  images: EvidenceFile[]
+  texts: EvidenceFile[]
+}
+
+const evidencePanels = computed<EvidencePanelRow[]>(() => {
+  if (!evidence.value) return []
+  return evidence.value.flows
+    .filter((f) => phaseFlowDirs.value.has(f.dir))
+    .map((f) => ({
+      dir: f.dir,
+      images: f.files.filter((x) => x.name.endsWith('.png')),
+      // toolkit.txt first — it is the index of everything else in the dir.
+      texts: f.files
+        .filter((x) => !x.name.endsWith('.png'))
+        .sort((a, b) =>
+          (a.name === 'toolkit.txt' ? -1 : b.name === 'toolkit.txt' ? 1 : a.name.localeCompare(b.name)),
+        ),
+    }))
+})
+
+const evidenceCount = computed(() =>
+  evidencePanels.value.reduce((n, f) => n + f.images.length + f.texts.length, 0),
+)
+
+function evidenceUrl(dir: string, file: EvidenceFile): string {
+  return evidenceFileUrl(props.phase.adw_id, `${dir}/${file.name}`)
+}
+
+function fmtSize(n: number): string {
+  return n < 1024 ? `${n}B` : `${(n / 1024).toFixed(1)}KB`
+}
+
 interface PromptPanel {
   id: string
   title: string
@@ -582,6 +667,44 @@ function togglePanel(id: string) {
           <p v-if="phaseUsage.partial" class="faint u-note">
             this run predates the per-component breakdown — only the total was recorded
           </p>
+        </DetailSection>
+
+        <DetailSection
+          v-if="evidencePanels.length"
+          title="evidence"
+          :icon="Camera"
+          :count="evidenceCount"
+          :open="openSections.has('evidence')"
+          @toggle="toggleSection('evidence')"
+        >
+          <div v-for="flow in evidencePanels" :key="flow.dir" class="evi-flow">
+            <div class="evi-name">{{ flow.dir }}</div>
+            <div v-if="flow.images.length" class="evi-grid">
+              <a
+                v-for="img in flow.images"
+                :key="img.name"
+                class="evi-thumb"
+                :class="{ 'evi-diff': img.name.endsWith('.diff.png') }"
+                :href="evidenceUrl(flow.dir, img)"
+                target="_blank"
+                :title="`${img.name} — open full size`"
+              >
+                <img :src="evidenceUrl(flow.dir, img)" :alt="img.name" loading="lazy" />
+                <span class="evi-cap">{{ img.name }} <span class="dim">{{ fmtSize(img.size) }}</span></span>
+              </a>
+            </div>
+            <div v-if="flow.texts.length" class="evi-files">
+              <a
+                v-for="f in flow.texts"
+                :key="f.name"
+                class="evi-file"
+                :href="evidenceUrl(flow.dir, f)"
+                target="_blank"
+              >
+                {{ f.name }} <span class="dim">{{ fmtSize(f.size) }}</span>
+              </a>
+            </div>
+          </div>
         </DetailSection>
 
         <DetailSection
@@ -1114,6 +1237,81 @@ h3:first-child {
 .u-note {
   margin: 10px 0 0;
   font-size: 15px;
+}
+
+/* ── evidence ── */
+
+.evi-flow {
+  margin-bottom: 16px;
+}
+
+.evi-name {
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--cyan);
+}
+
+.evi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.evi-thumb {
+  display: block;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--panel-3);
+  padding: 6px;
+  text-decoration: none;
+  color: var(--dim);
+}
+
+.evi-thumb:hover {
+  border-color: var(--dim);
+}
+
+/* A diff image IS a finding — give it the failure edge treatment gates use. */
+.evi-diff {
+  border-left: 3px solid var(--red);
+}
+
+.evi-thumb img {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.evi-cap {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.evi-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evi-file {
+  padding: 2px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--panel-3);
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.evi-file:hover {
+  border-color: var(--dim);
 }
 
 /* ── outputs ── */

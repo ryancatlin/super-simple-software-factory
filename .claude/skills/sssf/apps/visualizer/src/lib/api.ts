@@ -69,6 +69,36 @@ export async function fetchPrompts(adwId: string, agent: string): Promise<Prompt
   return { system: data.system ?? null, user: data.user ?? null }
 }
 
+// ── validation evidence ──────────────────────────────────────────────────────
+
+export interface EvidenceFile {
+  name: string
+  size: number
+}
+
+export interface EvidenceFlow {
+  dir: string
+  files: EvidenceFile[]
+}
+
+export interface EvidenceResponse {
+  flows: EvidenceFlow[]
+  files: EvidenceFile[]
+}
+
+export async function fetchEvidence(adwId: string): Promise<EvidenceResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(adwId)}/evidence`)
+  // No validation ran (or old server) — an empty panel, never an error.
+  if (res.status === 404) return { flows: [], files: [] }
+  if (!res.ok) throw new Error(`GET evidence → ${res.status}`)
+  const data = (await res.json()) as Partial<EvidenceResponse>
+  return { flows: data.flows ?? [], files: data.files ?? [] }
+}
+
+export function evidenceFileUrl(adwId: string, rel: string): string {
+  return `/api/sessions/${encodeURIComponent(adwId)}/evidence/file?path=${encodeURIComponent(rel)}`
+}
+
 export function fetchEnvelopes(adwId: string): Promise<Envelope[]> {
   return getJson(`/api/sessions/${encodeURIComponent(adwId)}/envelopes`) as Promise<Envelope[]>
 }

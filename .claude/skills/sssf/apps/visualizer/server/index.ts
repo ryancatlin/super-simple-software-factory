@@ -10,7 +10,7 @@
  *   bun run server/index.ts --db /path/to/repo/adws/adw_data/sssf.db
  *   SSSF_DB=/path/to/sssf.db PORT=4600 bun run server/index.ts
  */
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { SssfDb, resolveDbPath } from "./db.ts";
 import type { AgentPrompts, ApiError, HealthResponse } from "../shared/types.ts";
@@ -161,6 +161,68 @@ const server = Bun.serve({
     ),
 
     "/api/sessions/:adw_id/gates": safely((req) => json(db.gates(param(req, "adw_id")))),
+
+    // Validation evidence a run's flows left behind — screenshots, diffs, OCR
+    // and text sidecars, toolkit.txt. Files are the raw record; the db only
+    // points at them (each flow's tool_call payload carries its evidence_dir).
+    "/api/sessions/:adw_id/evidence": safely((req) => {
+      const adwId = param(req, "adw_id");
+      if (!isSafeSegment(adwId)) {
+        return json({ error: "invalid adw_id" } satisfies ApiError, 400);
+      }
+      const root = resolve(db.sessionsDir, adwId, "context_handoff", "validation");
+      if (!existsSync(root)) return json({ flows: [], files: [] });
+
+      const fileRow = (dir: string, name: string) => {
+        const stat = statSync(join(dir, name));
+        return { name, size: stat.size };
+      };
+      const flows: { dir: string; files: { name: string; size: number }[] }[] = [];
+      const files: { name: string; size: number }[] = [];
+      for (const entry of readdirSync(root).sort()) {
+        const full = join(root, entry);
+        if (statSync(full).isDirectory()) {
+          flows.push({
+            dir: entry,
+            files: readdirSync(full)
+              .sort()
+              .filter((f) => statSync(join(full, f)).isFile())
+              .map((f) => fileRow(full, f)),
+          });
+        } else {
+          files.push(fileRow(root, entry));
+        }
+      }
+      return json({ flows, files });
+    }),
+
+    // One evidence file, served only from inside the run's validation dir.
+    // `path` is relative to that dir; traversal is rejected by resolve+prefix,
+    // same as the static handler.
+    "/api/sessions/:adw_id/evidence/file": safely((req) => {
+      const adwId = param(req, "adw_id");
+      if (!isSafeSegment(adwId)) {
+        return json({ error: "invalid adw_id" } satisfies ApiError, 400);
+      }
+      const rel = new URL(req.url).searchParams.get("path") ?? "";
+      const root = resolve(db.sessionsDir, adwId, "context_handoff", "validation");
+      const candidate = resolve(join(root, rel));
+      if (candidate !== root && !candidate.startsWith(root + sep)) {
+        return json({ error: "invalid path" } satisfies ApiError, 400);
+      }
+      if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+        return notFound(`no evidence file ${rel}`);
+      }
+      const file = Bun.file(candidate);
+      // Sidecars use extensions Bun cannot map (.status, .log) — everything
+      // that is not an image reads fine as plain text in a browser tab.
+      const type = file.type && file.type !== "application/octet-stream"
+        ? file.type
+        : "text/plain; charset=utf-8";
+      return new Response(file, {
+        headers: { "content-type": type, "cache-control": "no-store" },
+      });
+    }),
 
     // The exact prompts an agent was sent, read from the session dir. Files are
     // the raw record; the db has no copy of them.
