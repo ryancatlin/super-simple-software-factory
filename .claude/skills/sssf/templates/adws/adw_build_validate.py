@@ -38,6 +38,15 @@ MAX_VALIDATION_LOOPS = 2
 FLOW_BRIEF = """
 
 Flow maintenance (this chain validates the RUNNING app afterwards):
+- FIND before you write: validation.yaml is the flow registry;
+  `grep '^# Flow:' adws/adw_data/validation/flows/*.sh` is the catalogue;
+  `grep '^# Step:' adws/adw_data/validation/flows/lib/*.sh` lists shared steps.
+  Extend an existing flow when the journey already has one — never duplicate it.
+- REUSE shared steps: flows `source` lib scripts (e.g.
+  `source "$(dirname "$0")/lib/login.sh"`). When a second flow needs a step an
+  existing flow already performs (login, seeded record), extract it into
+  flows/lib/ with a `# Step: <name> — <what it does>` header instead of
+  copying it. Lib scripts are never declared as flows.
 - If your change adds or alters a user-visible journey, add or update the flow
   that evidences it: a bash script in adws/adw_data/validation/flows/, declared
   in adws/adw_data/validation/validation.yaml. Undeclared scripts never run and

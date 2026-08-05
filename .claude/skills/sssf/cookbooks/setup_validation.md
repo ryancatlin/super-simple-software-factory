@@ -46,7 +46,21 @@ mechanical — `services.lint_flows` runs before any capture and FAILS it on:
 - a flow whose opening lines lack `# Flow: <name> — <scenario it evidences>`.
 
 So: `validation.yaml` is the ONLY registry, one journey per flow, and
-`grep '^# Flow:' adws/adw_data/validation/flows/*.sh` is the catalogue.
+`just flows` (i.e. `grep '^# Flow:'` over flows/, `'^# Step:'` over
+flows/lib/) is the catalogue.
+
+**Reuse tier — `flows/lib/`:** steps several flows share (a login, a seeded
+record) live here with a `# Step: <name> — <what it does>` header and are
+`source`d by flows (`source "$(dirname "$0")/lib/login.sh"`). Lib scripts are
+exempt from the registry rule but the lint enforces their header, and a
+declared flow living under lib/ is itself a violation. Agents are briefed to
+read the catalogue before writing and to extract a step the moment a second
+flow needs it — the library grows deduplicated by construction.
+
+**Seeing the proof:** every run's evidence is on disk under the session's
+`context_handoff/validation/<NN>_<flow>/` — `just evidence <adw_id>` lists it
+and opens the folder: screenshots, `*.diff.png`, OCR and text sidecars,
+`toolkit.txt`.
 
 The library maintains itself from here: `adw_build_validate`'s builder brief
 requires every change that touches a user-visible journey to add or update its

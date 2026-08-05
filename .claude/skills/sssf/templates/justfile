@@ -81,6 +81,15 @@ build-validate *ARGS:
 bless ADW_ID:
     uv run adws/adw_bless.py --adw-id {{ADW_ID}}
 
+# open a run's validation evidence (screenshots, diffs, sidecars): just evidence <adw_id>
+evidence ADW_ID:
+    @ls -R adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ && (xdg-open adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ 2>/dev/null || open adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ 2>/dev/null || true)
+
+# the flow catalogue: every journey and shared step in the library
+flows:
+    @grep -H '^# Flow:' adws/adw_data/validation/flows/*.sh 2>/dev/null || echo "no flows yet"
+    @grep -H '^# Step:' adws/adw_data/validation/flows/lib/*.sh 2>/dev/null || true
+
 # ── watch it ────────────────────────────────────────────────────────────────
 # Reads never block a running workflow, the db is WAL. Poll as hard as you like.
 

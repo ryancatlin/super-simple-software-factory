@@ -149,7 +149,9 @@ def stop(run, handle: Optional[ServiceHandle]) -> bool:
 # ── flow library neatness (mechanical, not disciplinary) ────────────────────
 
 FLOWS_DIR = "adws/adw_data/validation/flows"
+LIB_DIR = "adws/adw_data/validation/flows/lib"   # shared steps, sourced by flows
 HEADER_PREFIX = "# Flow:"
+LIB_HEADER_PREFIX = "# Step:"
 HEADER_SCAN_LINES = 5
 
 
@@ -162,10 +164,17 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
     lines carry a `# Flow: <name> — <scenario it evidences>` header, so
     `grep '^# Flow:'` over flows/ IS the catalogue. Violations fail the capture
     with named failures and ride back to the builder like any other red flow.
+
+    flows/lib/ is the reuse tier: shared steps (a login, a seeded record) that
+    flows `source`, never run directly. Lib scripts are exempt from the
+    registry rule but carry their own `# Step: <name> — <what it does>` header
+    — so `grep '^# Step:'` over lib/ is the shared-step catalogue, and a
+    declared flow living under lib/ is itself a violation.
     """
     failures: list[str] = []
     declared: dict = {}
     seen_names: set[str] = set()
+    lib_dir = (Path(repo_root) / LIB_DIR).resolve()
     for flow in decl.flows:
         if flow.name in seen_names:
             failures.append(f"{flow.name}: declared more than once in validation.yaml")
@@ -174,6 +183,10 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
         if not script.is_file():
             failures.append(f"{flow.name}: declared script {flow.script} does not exist")
             continue
+        if script.resolve().is_relative_to(lib_dir):
+            failures.append(
+                f"{flow.name}: {flow.script} lives under flows/lib/ — lib holds "
+                f"shared steps flows source, never flows themselves. Move it up.")
         declared[script.resolve()] = flow.name
         head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
         if not any(line.startswith(HEADER_PREFIX) for line in head):
@@ -183,11 +196,20 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
     flows_dir = Path(repo_root) / FLOWS_DIR
     if flows_dir.is_dir():
         for script in sorted(flows_dir.rglob("*.sh")):
+            if script.resolve().is_relative_to(lib_dir):
+                head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
+                if not any(line.startswith(LIB_HEADER_PREFIX) for line in head):
+                    failures.append(
+                        f"{script.relative_to(repo_root)}: shared step is missing its "
+                        f"`{LIB_HEADER_PREFIX} <name> — <what it does>` header in the "
+                        f"first {HEADER_SCAN_LINES} lines")
+                continue
             if script.resolve() not in declared:
                 rel = script.relative_to(repo_root)
                 failures.append(
                     f"{rel}: orphan — not declared in validation.yaml, so it never "
-                    f"runs. Declare it or delete it.")
+                    f"runs. Declare it, delete it, or move it to flows/lib/ if it "
+                    f"is a shared step other flows source.")
     return failures
 
 
@@ -230,6 +252,8 @@ def as_envelope(result: CaptureResult) -> CaptureOutput:
     return CaptureOutput(
         status="success" if result.passed else "fail",
         summary=(f"capture: all {len(result.flows)} flow(s) completed" if result.passed
+                 else f"capture: flow library lint failed ({len(result.failures)} violation(s))"
+                 if not result.flows
                  else f"capture: {len(result.failures)} of {len(result.flows)} flow(s) failed"),
         artifacts=result.artifacts,
         notes_for_next_agent=(
