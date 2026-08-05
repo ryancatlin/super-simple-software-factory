@@ -29,15 +29,17 @@ The two `*_engineering` dirs mirror the two config keys of the same name: `promp
 
 `harness_engineering/` ships with `subagents.ts` — the pi extension backing `subagent_create` / `_continue` / `_list` / `_remove`, wired to the planner and scout in the starter roster.
 
-## Idempotency
+## Idempotency and updates
 
-Re-running is safe. `install.py` skips **every** file that already exists — your config, your prompts, and previously stamped code alike — and reports what it skipped, so a second run doubles as a drift check. To refresh stamped code (`adw_modules/`, the starter `adw_*.py`) to the skill's current version, run with `--force` — but know that `--force` overwrites ALL existing stamped files, including `sssf.config.yaml` and `prompt_engineering/`, so commit or back up user-owned edits first.
+Re-running `install.py` is safe. It skips **every** file that already exists — your config, your prompts, and previously stamped code alike — and reports what it skipped, so a second run doubles as a drift check.
+
+To bring a stamped repo up to date with the fork, use **`just update`** (or `uv run .claude/skills/sssf/scripts/update.py`) instead of `--force`. Update is diff-based against the stamp manifest (`adws/adw_sssf_config/stamp_manifest.json`): files you have not edited since stamping are refreshed to the new template, new files (like `adw_wait.py` / `adw_kill.py`) are added, and anything the project edited — including `sssf.config.yaml`, `prompt_engineering/`, and `harness_engineering/`, which are never overwritten — is kept and reported. Pre-manifest stamps are detected via the project's own old skill copy. `--dry-run` previews; `--source <path>` points at a local fork instead of fetching from GitHub. `install.py --force` remains for a full reset — commit first, it overwrites everything.
 
 ## Post-install checklist
 
-1. **Env** — `cp .env.sample .env`, then set `OPENROUTER_API_KEY` in `.env`. (v1 runs Pi; `ANTHROPIC_API_KEY` / `CLAUDE_CODE_PATH` are only needed once Claude Code lands in v2.)
+1. **Env** — `cp .env.sample .env`, then set `OPENROUTER_API_KEY` in `.env` (pi's per-token path). If the roster uses `coding_agent: claude_code`, no key is needed — it bills whatever `claude auth status` is logged into.
 2. **Pi is installed and on PATH** — `pi --version`. Set `PI_PATH` in `.env` if it is not.
-3. **The model resolves** — the config's default `gemini-3.6-flash` must be a registered id in `~/.pi/agent/models.json`. Check with `pi --list-models` or read the file directly; see `references/config.md` for model resolution.
+3. **The model resolves** — the config's default must be a registered id in `~/.pi/agent/models-store.json`. Check with `pi --list-models` or read the file directly; see `references/config.md` for model resolution.
 4. **Gitignore** — `install.py` appends `adws/adw_data/sessions/`, `adws/adw_data/sssf.db*`, and `.env` for you; confirm they landed. All three are runtime or secrets and must never be committed.
 5. **Git repo** — ADWs that end in a commit phase call `git_helper.commit_all`, which raises if the cwd is not a git repository. Run `git init` and make a first commit before using `adw_plan_build.py`, `adw_plan_build_test.py`, or `adw_simple_sdlc.py`. `adw_document.py` needs one too: it measures the change with `git diff` against a base ref (`main` by default, `--base` to override).
 6. **Smoke test** — `just demo` runs two cheap read-only workflows back to back, or run the smallest ADW directly:

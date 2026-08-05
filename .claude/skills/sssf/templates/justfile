@@ -91,6 +91,14 @@ wait ADW_ID:
 kill ADW_ID:
     uv run adws/adw_kill.py --adw-id {{ADW_ID}}
 
+# ── update ──────────────────────────────────────────────────────────────────
+
+# handsfree, non-breaking refresh from the fork: just update
+# refreshes unmodified stamped files, ADDS new ones, and KEEPS anything the
+# project edited (config, prompts, harness, .env are never overwritten).
+update:
+    uv run .claude/skills/sssf/scripts/update.py
+
 # ── observability UI ────────────────────────────────────────────────────────
 
 # Needs bun. The db path is passed explicitly because the server runs from the

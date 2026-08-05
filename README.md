@@ -52,6 +52,19 @@ The bill for skipping this is not only tokens. It is cost, speed, and consistenc
 
 Two steps: get the skill into your repo, then stamp the factory.
 
+### Quickstart (one command, for project hopping)
+
+From any project root — the local fork if you have it, otherwise it clones
+`ryancatlin/super-simple-software-factory` (branch `main`):
+
+```bash
+bash ~/Documents/GitHub/super-simple-software-factory/.claude/skills/sssf/scripts/quickstart.sh
+```
+
+It copies the skill in, stamps the factory, creates `.env` from the sample,
+and `git init`s if needed. Already-installed repos are refused — update those
+with `just update` instead.
+
 ### Agentic Install
 
 Copy `.claude/skills/sssf/` into the target repo and type `/sssf install` inside Claude Code. The skill is named `sssf`, so that is the skill name followed by the `install` argument. There is no bare `/install` command. The agent reads the skill's own `cookbooks/install.md` and does the rest.
@@ -80,13 +93,41 @@ just obs                   # the trace UI, needs bun
 uv run adws/adw_prompt.py "reply with a one-line summary of this repo" --agent scout
 ```
 
-Re-running `install.py` is safe. It skips every file that already exists and reports what it skipped, so a second run doubles as a drift check. `--force` refreshes stamped code to the skill's current version, but it overwrites **all** stamped files including your `sssf.config.yaml` and your prompts, so commit first.
+Re-running `install.py` is safe. It skips every file that already exists and reports what it skipped, so a second run doubles as a drift check.
 
 Green on the smoke test means the whole path works: config validated, session minted, Pi ran, envelope parsed, events landed in `adws/adw_data/sssf.db`. Fix it there before composing anything larger, because every multi-agent chain rides this exact path.
 
+## Updating a stamped repo (handsfree, non-breaking)
+
+`just update` (or `uv run .claude/skills/sssf/scripts/update.py`) refreshes a
+stamped repo from the fork. It is diff-based and never force-overwrites:
+
+| File state | What update does |
+|---|---|
+| Unmodified since stamp (matches the manifest hash) | **refreshed** to the new template |
+| Edited by the project | **kept**, reported |
+| New in the template (e.g. `adw_wait.py`, `adw_kill.py`) | **added** |
+| In the manifest but gone from the template | left in place, reported |
+| User-owned (`sssf.config.yaml`, `prompt_engineering/`, `harness_engineering/`, `.env`) | **never overwritten** (add-only) |
+
+Every stamp writes `adws/adw_sssf_config/stamp_manifest.json` recording each
+file's template hash, so update can tell "old template" from "your edit".
+Repos stamped before manifests existed are handled too: on first update,
+files are compared against the project's own old skill copy — pristine-old
+files refresh immediately, edits are kept.
+
+Source resolution: `--source <skill-or-fork-path>` for a local copy,
+otherwise it fetches the fork recorded in the manifest (default
+`ryancatlin/super-simple-software-factory`, `main`) into `~/.cache/sssf-update/`.
+`--dry-run` previews without touching anything. Never prompts.
+
+Also on the justfile: `just wait <adw_id>` blocks in code until a run finishes
+(zero tokens — the agent doesn't poll), and `just kill <adw_id>` stops a run
+children-first, verifying pids against the trace before signalling.
+
 ### Which API keys you actually need
 
-That depends on your roster, not on this repo. Every `model:` in `sssf.config.yaml` is written `provider/model-id`, and the provider half decides the key. Which key pi reads for a given provider comes from `~/.pi/agent/models.json`.
+That depends on your roster, not on this repo. Every `model:` in `sssf.config.yaml` is written `provider/model-id`, and the provider half decides the key. Which key pi reads for a given provider comes from `~/.pi/agent/models-store.json`.
 
 The starter roster deliberately mixes providers to show the point, so out of the box it wants three:
 
@@ -148,7 +189,7 @@ There is no DSL here. No framework to learn. It is Python, YAML, agents, and a s
 
 ```yaml
 defaults:
-  coding_agent: pi                 # v1 runs pi only, claude_code is schema-valid and stubbed
+  coding_agent: pi                 # pi | claude_code (pi default; claude_code burns a fixed seat)
   model: google/gemini-3.6-flash   # provider/model-id, a bare id can match several providers
   thinking: medium                 # off | minimal | low | medium | high | xhigh | max
   protected_files:                 # no agent may edit the machinery that grades it
@@ -288,7 +329,7 @@ super-simple-software-factory/          # the deployable factory, and nothing el
     ├── SKILL.md                        # hard rules + request routing table
     ├── cookbooks/                      # 9 orchestrator playbooks, loaded lazily
     ├── references/                     # config / handoff / observability specs
-    ├── scripts/                        # install.py, make_config.py, make_adw.py
+    ├── scripts/                        # install.py, update.py, quickstart.sh, make_config.py, make_adw.py
     ├── apps/visualizer/                # the read-only trace UI (Vue + Vite on Bun)
     └── templates/                      # EXACTLY what install.py stamps
         ├── sssf.config.yaml            # the starter roster
@@ -356,13 +397,13 @@ Honest edges, because knowing them is cheaper than discovering them.
 | The test phase reports green on a fresh install | `quality.py` ships placeholder commands that exit 0. Three ADWs run them as their test phase | Wire your real commands into `quality.py` before trusting `adw_build_test`, `adw_plan_build_test`, or `adw_simple_sdlc`. This is the first thing to customize |
 | A bare model pattern | The same model sits under several providers, so `gemini-3.6-flash` matches three catalog entries and `agents.validate()` refuses to spawn | Always write `provider/model-id` |
 | `just` is not installed | The stamped `justfile` is a convenience wrapper, nothing depends on it | Every recipe is a one-line `uv run` or `sqlite3` command. Open the justfile and run the line yourself |
-| A coding agent hangs silently | No events, no tokens, an empty `raw_output.jsonl`. The trace goes quiet rather than red | Query `processes` for what is alive and kill it children-first. A killed run finalizes its own trace to `fail` |
+| A coding agent hangs silently | No events, no tokens, an empty `raw_output.jsonl`. The trace goes quiet rather than red | Query `processes` for what is alive and kill it children-first (`just kill <adw_id>`). A killed run finalizes its own trace to `fail` |
 | The synced triad drifts | Type, `## Report` example, and `output_type=` disagree, so every call burns correction rounds | Grep the type name and fix all three in one edit |
 | Gates pass, output is bad | Gates check what a predicate can check, not plan quality or code taste | Run the `reviewer`, or read it yourself |
 | An agent edits something it should not | Detected and rolled back after the call, and the phase fails | Expected. Widen that agent's `writes` if the change was legitimate |
 | Commit phase has nothing to commit | `commit_all` raises if the cwd is not a git repo or nothing changed | `git init` with one commit first. A no-op build fails the phase rather than committing nothing |
-| `install.py --force` | Overwrites **all** stamped files, config and prompts included | Commit before you force |
-| `coding_agent: claude_code` | Schema-valid, but `agent_cc.py` raises | v1 is Pi only |
+| `install.py --force` | Overwrites **all** stamped files, config and prompts included | Commit before you force. Prefer `just update`, which refreshes only what you have not edited |
+| `coding_agent: claude_code` | Implemented (adapter in `agent_cc.py`); verify your `claude` CLI is logged into the seat you intend to bill | `claude auth status` — a metered API login bills credits, not the fixed seat |
 
 Also missing on purpose, so you know what to add: this runs on your current branch. For real work you want a branch per run, a sandbox around the agent, and a merge step at the end.
 
