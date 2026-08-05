@@ -41,7 +41,22 @@ def repo_root() -> Path:
 
 
 def commit_all(message: str) -> str:
-    """Stage the working tree and commit it. Returns the new short sha."""
+    """Stage the working tree and commit it. Returns the new short sha.
+
+    Stages EVERYTHING (git add -A) — the working tree is the source of
+    truth for what a run changed. Consequences, by design:
+
+    - Untracked files on disk are committed unless gitignored. To keep a
+      file out of commits: add it to .gitignore, or delete it — `git rm
+      --cached` does NOT survive this phase (the file stays on disk, and
+      the next add -A re-stages it). Observed live: an untrack-then-commit
+      run re-committed both files it had just untracked.
+    - Scoping the add (e.g. to the builder's self-reported changed_files)
+      would silently DROP unclaimed files from commits — the gate only
+      checks claimed files exist, not that all changes were claimed. A
+      factory that loses work quietly is worse than one that over-commits
+      visibly. Do not "fix" this without an authoritative file list.
+    """
     if not is_repo():
         raise RuntimeError(
             "not a git repository — a commit phase needs one. Run `git init` in the "
