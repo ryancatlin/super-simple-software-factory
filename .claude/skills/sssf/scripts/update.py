@@ -320,40 +320,6 @@ def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
         report["refreshed"].append(f".gitignore (+{len(missing)} entries)")
 
 
-PI_SETTINGS = ".pi/settings.json"
-
-
-def ensure_pi_settings(root: Path, report: dict, dry: bool) -> None:
-    """Wire pi to the project's Claude Code skills (.pi/settings.json).
-
-    Merges, never clobbers: an existing file keeps its keys, and the
-    "skills" array gains the project skill dir if it is not already there.
-    """
-    path = root / PI_SETTINGS
-    desired = "../.claude/skills"
-    if path.is_file():
-        try:
-            data = json.loads(path.read_text())
-            if not isinstance(data, dict):
-                data = {}
-        except json.JSONDecodeError:
-            data = {}
-        skills = data.get("skills")
-        if isinstance(skills, list) and desired in skills:
-            report["kept"].append(f"{PI_SETTINGS} (pi already wired)")
-            return
-        if not isinstance(skills, list):
-            skills = []
-        skills.append(desired)
-        data["skills"] = skills
-    else:
-        data = {"skills": [desired]}
-    if not dry:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + "\n")
-    report["refreshed"].append(f"{PI_SETTINGS} (pi -> {desired})")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--source", help="local skill dir or fork clone (skip fetch)")
@@ -399,7 +365,6 @@ def main() -> int:
                               "branch": args.branch or DEFAULT_BRANCH}
         save_manifest(root, manifest)
         ensure_gitignore(root, report, False)
-        ensure_pi_settings(root, report, False)
     else:
         update_tree(skill, root, manifest, True, report)
 
