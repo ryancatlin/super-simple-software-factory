@@ -63,7 +63,9 @@ Flow maintenance (this chain validates the RUNNING app afterwards):
   baseline is now stale: say so in notes_for_next_agent so the engineer can
   re-bless (adw_bless.py) after the run goes green.
 - This run executes your flows immediately — a flow that cannot run comes
-  straight back to you as a failure."""
+  straight back to you as a failure. Do NOT start the service or run the
+  flows yourself: code provisions, captures, and tears down the moment you
+  report, and a server you leave behind collides with that provision."""
 
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
