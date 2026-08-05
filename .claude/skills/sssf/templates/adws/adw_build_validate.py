@@ -56,7 +56,11 @@ Flow maintenance (this chain validates the RUNNING app afterwards):
 - Flows are MECHANICAL evidence capture, run with $BASE_URL and $EVIDENCE_DIR
   set, cwd = $EVIDENCE_DIR; save evidence there and exit non-zero on any
   checkable failure. agent-browser is the primary instrument (open, snapshot -i,
-  get text @ref, screenshot); curl is the degrade path. Judgement belongs to
+  get text @ref, screenshot — ALWAYS pass screenshot an explicit path like
+  "$EVIDENCE_DIR/<name>.png"; its default saves to its own tmp dir, not the
+  cwd). A client-rendered page must be polled until the expected content
+  appears in a snapshot (bounded retries, then fail). curl is the degrade
+  path. Judgement belongs to
   the validator, not the flow — and code enriches every screenshot afterwards
   (OCR sidecar, blank check, baseline drift), so capture, don't analyse.
 - If your change intentionally alters how a page LOOKS, the old visual

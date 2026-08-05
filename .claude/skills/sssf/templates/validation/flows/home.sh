@@ -3,8 +3,9 @@
 #
 # Run by adw_modules/services.py with:
 #   $BASE_URL       the running service's origin (from validation.yaml health_url)
-#   $EVIDENCE_DIR   where every artifact must land (also the cwd — agent-browser
-#                   screenshots save to the cwd, so they land here by default)
+#   $EVIDENCE_DIR   where every artifact must land (also the cwd). Always pass
+#                   agent-browser screenshot an explicit path — its default
+#                   save location is its own tmp dir, NOT the cwd.
 #
 # agent-browser is the primary capture instrument: `snapshot -i` and `get text`
 # produce TEXT evidence any validator can judge directly, and screenshots feed
@@ -30,7 +31,7 @@ echo "GET $BASE_URL/ -> $status" > "$EVIDENCE_DIR/home.status"
 if command -v agent-browser >/dev/null 2>&1 || npx --no-install agent-browser --version >/dev/null 2>&1; then
   npx agent-browser open "$BASE_URL/"
   npx agent-browser snapshot -i > "$EVIDENCE_DIR/home.snapshot.txt"
-  npx agent-browser screenshot            # saves into cwd == $EVIDENCE_DIR
+  npx agent-browser screenshot "$EVIDENCE_DIR/home.png"   # explicit path — the default saves to agent-browser's tmp dir
   npx agent-browser close
 else
   # Degrading to curl-only evidence is a VISIBLE choice, never a silent one.
