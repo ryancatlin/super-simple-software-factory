@@ -231,15 +231,6 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     provider, model_id = resolve_model(request.model)
     cmd = [
         PI_PATH, "-p", "--mode", "json",
-        # -a (--approve): trust project-local files for this run. pi gates
-        # .pi/settings.json (skills, extensions, prompts) behind project
-        # trust, and in headless -p mode the resolver defaults to UNTRUSTED
-        # when no decision is stored — so without -a the factory's own
-        # wiring (e.g. .pi/settings.json skills -> ../.claude/skills) is
-        # silently skipped. The factory's .pi/ is stamped config, not
-        # untrusted input, so approving every run is correct here. Context
-        # files (AGENTS.md/CLAUDE.md) load regardless of trust.
-        "-a",
         "--provider", provider, "--model", model_id,
         "--thinking", request.thinking,
         "--session-id", request.session_id,
