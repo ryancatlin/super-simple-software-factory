@@ -93,9 +93,9 @@ kill ADW_ID:
 
 # ── update ──────────────────────────────────────────────────────────────────
 
-# handsfree, non-breaking refresh from the fork: just update
 # refreshes unmodified stamped files, ADDS new ones, and KEEPS anything the
 # project edited (config, prompts, harness, .env are never overwritten).
+# handsfree, non-breaking refresh from the fork: just update
 update:
     uv run .claude/skills/sssf/scripts/update.py
 
