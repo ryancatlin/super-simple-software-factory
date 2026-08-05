@@ -20,8 +20,16 @@ from .data_types import PiRequest, PiResult
 from .utils import now_iso, operator_env
 
 PI_PATH = os.environ.get("PI_PATH", "pi")
-MODELS_JSON = os.environ.get("PI_MODELS_PATH",
-                             str(Path.home() / ".pi" / "agent" / "models.json"))
+# pi's merged model catalog moved from models.json to models-store.json.
+# Prefer the current file, fall back to the old name, and let an env var
+# (PI_MODELS_PATH) override both.
+_MODELS_FILES = [
+    os.environ.get("PI_MODELS_PATH"),
+    str(Path.home() / ".pi" / "agent" / "models-store.json"),
+    str(Path.home() / ".pi" / "agent" / "models.json"),
+]
+MODELS_JSON = next((p for p in _MODELS_FILES if p and Path(p).is_file()),
+                   _MODELS_FILES[-1] or "")
 
 RESULT_SNIPPET_CHARS = 20_000   # tool output rides along whole; clip only guards pathological cases
 ARG_VALUE_CHARS = 20_000        # args too — the UI scrolls, it must not be handed cut-off data
@@ -107,8 +115,14 @@ def _context_tokens(usage: dict) -> int:
 
 def context_window(provider: str, model_id: str) -> int:
     """The model's context ceiling from pi's merged model catalog."""
-    registry = json.loads(Path(MODELS_JSON).read_text())
-    for model in registry.get("providers", {}).get(provider, {}).get("models", []):
+    try:
+        registry = json.loads(Path(MODELS_JSON).read_text())
+    except (OSError, ValueError):
+        registry = {}
+    # models-store.json is keyed by provider at the top level; older pi wrapped
+    # everything under a "providers" key — accept both shapes.
+    providers = registry.get("providers", registry)
+    for model in providers.get(provider, {}).get("models", []):
         if model.get("id") == model_id:
             return int(model.get("contextWindow") or 0)
     for listed_provider, listed_model, window in _pi_catalog():
@@ -246,6 +260,7 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
                                env=operator_env())
     if on_spawn:
         on_spawn(process.pid)
+    done = False          # set when pi emits the terminal agent_settled event
     with raw_path.open("a") as raw:
         assert process.stdout is not None
         for line in process.stdout:
@@ -276,9 +291,26 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
                     result.cost += (usage.get("cost", {}) or {}).get("total", 0.0) or 0.0
             if on_event:
                 on_event(event)
+            if event.get("type") == "agent_settled":
+                # Terminal event: pi is done answering. It does NOT close
+                # stdout after settling (TUI-first binary), so break here —
+                # reading on would block forever on a dead-settled process.
+                done = True
+                break
 
+    # pi may linger after agent_settled; terminate it as cleanup. If the
+    # process already exited (stdout EOF path), wait() returns immediately.
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
     stderr = process.stderr.read() if process.stderr else ""
-    result.returncode = process.wait()
+    result.returncode = 0 if done else process.wait()
     if on_exit:
         on_exit(process.pid)
     if result.returncode != 0 and not result.text:
