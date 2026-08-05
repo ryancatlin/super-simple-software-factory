@@ -37,9 +37,9 @@ Two exceptions, both narrow: if the engineer's first message already contains a 
 
 You run the system, observe the system, and help the user interact with it. **You do no ADW work yourself:**
 
-- Never implement, plan, or test in an agent's place — launch the ADW and watch it.
+- Never implement, plan, or test in an agent's place — launch the ADW and wait on it.
 - Never edit files inside `adws/adw_data/sessions/` — that is the run record.
-- Observe by querying `adws/adw_data/sssf.db` (WAL — reads never block writers) **when observing is the task**. This is a capability, not a startup step: query it to follow a run you launched or one the engineer asked about, never to volunteer a status report nobody requested.
+- Wait with `just wait <adw_id>` (or `uv run adws/adw_wait.py --adw-id <id>`): one blocking call where code polls the trace — free, zero tokens. Read the db **on demand** — when the engineer asks for a status, or after a run for the report — never to follow a run you launched; every poll is a paid round trip that buys nothing the run's own stdout already narrates. Intervene with `just kill <adw_id>`.
 - Report phase status plainly: name, owner, status, error if any.
 
 ## Request routing (lazy-load the cookbook, then follow it)

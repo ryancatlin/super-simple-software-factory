@@ -79,6 +79,18 @@ tail ADW_ID:
 procs ADW_ID:
     @sqlite3 {{db}} "select kind, name, pid, command, started_at from processes where adw_id='{{ADW_ID}}' and ended_at is null order by id;"
 
+# ── wait & intervene ──────────────────────────────────────────────────────
+# The orchestrator launches in the background, then makes ONE blocking call
+# here. Code polls the trace; the agent does not. Zero tokens while waiting.
+
+# block until a run finishes, then print its summary: just wait <adw_id>
+wait ADW_ID:
+    uv run adws/adw_wait.py --adw-id {{ADW_ID}}
+
+# stop a run — agent children first, then the workflow: just kill <adw_id>
+kill ADW_ID:
+    uv run adws/adw_kill.py --adw-id {{ADW_ID}}
+
 # ── observability UI ────────────────────────────────────────────────────────
 
 # Needs bun. The db path is passed explicitly because the server runs from the

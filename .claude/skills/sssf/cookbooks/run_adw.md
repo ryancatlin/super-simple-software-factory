@@ -21,7 +21,7 @@ uv run adws/<build-first-chain>.py "implement the plan" --adw-id a1b2c3d4
 uv run adws/<recon-chain>.py "where is auth handled" --config path/to/other.config.yaml
 ```
 
-The prompt is inline text or a file path. Launch in the background so you can poll while it works; the `adw_id` is printed on startup — capture it, everything else keys off it.
+The prompt is inline text or a file path. Launch in the background; the `adw_id` is printed on startup — capture it, everything else keys off it. Then wait on it with **one blocking call**: `just wait <adw_id>` (or `uv run adws/adw_wait.py --adw-id <id>`). The waiter polls the trace in code — free, zero tokens — and prints the run's summary when it finishes. Do NOT poll the db yourself: every poll is a paid round trip that buys nothing the run's own stdout already narrates.
 
 ### Listen for the roster
 
@@ -68,7 +68,7 @@ Two things that bite:
 
 ## Observe
 
-The trace db is `adws/adw_data/sssf.db`. It is WAL, so reads never block the running writers — poll it as often as you like.
+The trace db is `adws/adw_data/sssf.db`. It is WAL, so reads never block the running writers. Read it **on demand** — when the engineer asks for a status, or after the run for your report. Live-watching is `just wait`'s job (code-side, free) and the visualizer's (human-side); your context is not a monitor, and every poll costs tokens for zero new information.
 
 ```bash
 # where the run stands
@@ -93,7 +93,7 @@ sqlite3 adws/adw_data/sssf.db \
    where adw_id='a1b2c3d4' and type='tool_call' order by ended_at desc limit 20;"
 ```
 
-Poll on a cursor: keep the highest `rowid` you have seen and query `where rowid > ?`. Don't re-read the whole table each pass.
+Poll on a cursor: keep the highest `rowid` you have seen and query `where rowid > ?`. Don't re-read the whole table each pass. If you do read a live run, read once and report — never loop: the wait is `just wait <adw_id>`, and it is free.
 
 `tool_call` rows carry a real span, so durations come off the columns — see `references/observability.md` for which fields each event type populates.
 
