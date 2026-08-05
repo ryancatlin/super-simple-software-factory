@@ -30,6 +30,12 @@ defaults:
     - adws/adw_modules/
     - adws/adw_sssf_config/
     - adws/adw_*.py
+    # The prompts and harness extensions are the graders' voices — an agent
+    # must not be able to edit how the next agent is instructed to judge it.
+    # (Session runtime under sessions/ is always writable; these dirs are
+    # user-owned configuration that merely lives beside it.)
+    - adws/adw_data/prompt_engineering/
+    - adws/adw_data/harness_engineering/
   data_dir: adws/adw_data          # runtime home: {data_dir}/sessions/{adw_id}/{agent_name}/
 
 observability:

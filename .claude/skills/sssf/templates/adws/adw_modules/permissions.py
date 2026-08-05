@@ -110,18 +110,28 @@ def _matches(path: str, pattern: str) -> bool:
 def always_writable(cfg: SSSFConfig) -> list[str]:
     """The session runtime, which EVERY agent must be able to write.
 
-    `context_handoff/` is the one place agents hand work to each other, and an
-    agent's own prompts, raw_output.jsonl, and envelope.json land beside it.
-    Scout writes its findings there, the reviewer its review, the planner its
-    plan — a read-only agent is read-only with respect to the REPO, never with
-    respect to its own report.
+    `sessions/{adw_id}/context_handoff/` is the one place agents hand work to
+    each other, and an agent's own prompts, raw_output.jsonl, and envelope.json
+    land beside it. Scout writes its findings there, the reviewer its review,
+    the planner its plan — a read-only agent is read-only with respect to the
+    REPO, never with respect to its own report.
 
-    This is granted from `data_dir` rather than left to .gitignore. The runtime
-    is normally ignored, so it never even appears in a snapshot — but an agent's
+    This is granted in code rather than left to .gitignore. The runtime is
+    normally ignored, so it never even appears in a snapshot — but an agent's
     ability to record its work must not hang on a gitignore entry that someone
-    can delete or that a changed `data_dir` can outgrow.
+    can delete. The trace db is included for the same reason: the tracer writes
+    it DURING an agent's phase, so an unignored db would otherwise pin the
+    tracer's own rows on whichever agent happened to be running.
+
+    Deliberately NOT the whole of `data_dir`: user-owned configuration lives
+    there too (prompt_engineering/, harness_engineering/, validation/), and a
+    blanket grant would let a `writes: []` agent rewrite its own prompts. Only
+    the runtime is runtime.
     """
-    return [cfg.defaults.data_dir.rstrip("/") + "/"]
+    data_dir = cfg.defaults.data_dir.rstrip("/")
+    return [f"{data_dir}/sessions/",
+            cfg.observability.db, f"{cfg.observability.db}-wal",
+            f"{cfg.observability.db}-shm"]
 
 
 def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig) -> bool:
