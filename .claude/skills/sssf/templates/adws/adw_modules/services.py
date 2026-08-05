@@ -23,7 +23,9 @@ forget to stop it, because it never touches either.
 from __future__ import annotations
 
 import os
+import re
 import shlex
+import shutil
 import signal
 import socket
 import subprocess
@@ -31,6 +33,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from html.parser import HTMLParser
+from io import StringIO
 from pathlib import Path
 from typing import Optional
 
@@ -273,6 +277,7 @@ def _run_flow(run, flow: FlowSpec, base_url: str, seq: int) -> FlowResult:
     (evidence_dir / "flow.log").write_text(
         f"$ {command}\nexit: {returncode}\nduration_seconds: {duration:.3f}\n"
         f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n")
+    _enrich_evidence(flow.name, evidence_dir, run.repo_root)
     passed = returncode == 0
     run.tracer.event(EventRecord(
         adw_id=run.adw_id, phase_id=phase.phase_id, type="tool_call",
@@ -286,6 +291,145 @@ def _run_flow(run, flow: FlowSpec, base_url: str, seq: int) -> FlowResult:
                       passed=passed, duration_seconds=duration,
                       evidence_dir=str(evidence_dir),
                       output_tail=(stdout + stderr)[-TAIL_CHARS:])
+
+
+# ── evidence toolkit (mechanical enrichment, best-effort, never fails a flow) ─
+#
+# Everything here exists because of a measured failure mode: a text-only
+# validator, handed raw pixels, improvised its own OCR pipeline for 442k
+# tokens. Extraction is a known command, so it runs HERE, once, in
+# milliseconds — the validator judges the extracted text. Each processor is
+# guarded (a missing binary is noted, never fatal) and every action or skip
+# lands in toolkit.txt, so thin evidence is visibly thin instead of silently
+# thin.
+
+BASELINES_DIR = "adws/adw_data/validation/baselines"
+BLANK_STDDEV = 0.01                 # pixel stddev below this = uniform image
+
+
+class _TextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.out = StringIO()
+        self._skip = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self._skip += 1
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style") and self._skip:
+            self._skip -= 1
+
+    def handle_data(self, data):
+        if not self._skip and data.strip():
+            self.out.write(data.strip() + "\n")
+
+
+def _enrich_evidence(flow_name: str, evidence_dir: Path, repo_root) -> None:
+    """Post-process a flow's evidence: OCR, blank check, baseline diff, html→text."""
+    notes: list[str] = []
+    have_magick = bool(shutil.which("magick"))
+    have_tesseract = bool(shutil.which("tesseract"))
+    baselines = Path(repo_root) / BASELINES_DIR / flow_name
+
+    for png in sorted(evidence_dir.glob("*.png")):
+        if png.name.endswith(".diff.png"):
+            continue
+        # dimensions + blank detection — a solid-colour "screenshot" is the
+        # classic silent capture failure, flagged in the evidence itself
+        if have_magick:
+            probe = _cmd(["magick", "identify", "-format",
+                          "%wx%h %[fx:standard_deviation]", str(png)])
+            if probe is not None:
+                size, _, stddev = probe.partition(" ")
+                blank = _to_float(stddev) is not None and _to_float(stddev) < BLANK_STDDEV
+                notes.append(f"{png.name}: {size}"
+                             + (" — LIKELY BLANK (uniform pixels), treat this "
+                                "capture as failed evidence" if blank else ""))
+        else:
+            notes.append(f"{png.name}: magick not installed — no size/blank check")
+        # OCR sidecar: pixels become judgeable text
+        if have_tesseract:
+            text = _cmd(["tesseract", str(png), "-"])
+            if text is not None:
+                png.with_suffix(".ocr.txt").write_text(text)
+                notes.append(f"{png.name}: OCR -> {png.with_suffix('.ocr.txt').name}")
+        else:
+            notes.append(f"{png.name}: tesseract not installed — no OCR sidecar")
+        # baseline diff: drift score + diff image, when a blessed baseline exists
+        baseline = baselines / png.name
+        if not baseline.is_file():
+            notes.append(f"{png.name}: no baseline at "
+                         f"{BASELINES_DIR}/{flow_name}/{png.name} — bless one with "
+                         f"adw_bless.py to enable visual regression")
+        elif have_magick:
+            diff_png = png.with_suffix(".diff.png")
+            result = subprocess.run(
+                ["magick", "compare", "-metric", "RMSE", str(baseline), str(png),
+                 str(diff_png)], capture_output=True, text=True, timeout=60)
+            match = re.search(r"\(([\d.eE+-]+)\)", result.stderr)
+            if result.returncode in (0, 1) and match:
+                drift = float(match.group(1))
+                notes.append(f"{png.name}: baseline drift {drift:.4f} "
+                             f"(0=identical, 1=every pixel) -> {diff_png.name}")
+            else:
+                notes.append(f"{png.name}: baseline compare failed "
+                             f"({result.stderr.strip()[:120]})")
+
+    for html in sorted(evidence_dir.glob("*.html")):
+        extractor = _TextExtractor()
+        try:
+            extractor.feed(html.read_text(errors="replace"))
+            html.with_suffix(".txt").write_text(extractor.out.getvalue())
+            notes.append(f"{html.name}: text -> {html.with_suffix('.txt').name}")
+        except Exception as error:                          # noqa: BLE001
+            notes.append(f"{html.name}: text extraction failed ({error})")
+
+    if notes:
+        (evidence_dir / "toolkit.txt").write_text(
+            "Mechanical evidence toolkit — what ran, what was skipped, and why.\n"
+            "Judge from the sidecars; do not re-derive them.\n\n"
+            + "\n".join(notes) + "\n")
+
+
+def bless_baselines(adw_id: str, data_dir: str = "adws/adw_data",
+                    repo_root: str | Path = ".") -> list[str]:
+    """Accept a run's screenshots as the baselines future runs diff against.
+
+    Copies every non-diff PNG from the session's flow evidence dirs into
+    BASELINES_DIR/<flow>/, mirroring names. Returns what it blessed. Baselines
+    are user-owned project source — commit them like the flows.
+    """
+    root = Path(repo_root)
+    validation_dir = root / data_dir / "sessions" / adw_id / "context_handoff" / "validation"
+    blessed: list[str] = []
+    for evidence_dir in sorted(validation_dir.glob("[0-9][0-9]_*")):
+        flow_name = evidence_dir.name.split("_", 1)[1]
+        for png in sorted(evidence_dir.glob("*.png")):
+            if png.name.endswith(".diff.png"):
+                continue
+            target = root / BASELINES_DIR / flow_name / png.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(png, target)
+            blessed.append(str(target.relative_to(root)))
+    return blessed
+
+
+def _cmd(argv: list[str], timeout: int = 60) -> Optional[str]:
+    """Run a toolkit command; None on any failure — enrichment never raises."""
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return result.stdout if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _to_float(text: str) -> Optional[float]:
+    try:
+        return float(text)
+    except ValueError:
+        return None
 
 
 # ── plumbing ─────────────────────────────────────────────────────────────────

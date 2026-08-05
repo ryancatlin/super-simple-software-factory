@@ -77,6 +77,10 @@ validate *ARGS:
 build-validate *ARGS:
     uv run adws/adw_build_validate.py --config {{config}} "$@"
 
+# accept a run's screenshots as the visual baselines: just bless <adw_id>
+bless ADW_ID:
+    uv run adws/adw_bless.py --adw-id {{ADW_ID}}
+
 # ── watch it ────────────────────────────────────────────────────────────────
 # Reads never block a running workflow, the db is WAL. Poll as hard as you like.
 

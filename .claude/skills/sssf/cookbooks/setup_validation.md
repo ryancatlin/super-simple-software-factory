@@ -54,6 +54,33 @@ flow, and the same run executes it immediately — proven at birth, red when it
 rots. A flow for a removed feature goes red on the next run and gets updated
 or deleted; staleness cannot accumulate silently.
 
+## The evidence toolkit (code enriches, the validator judges)
+
+After every flow, `services.py` mechanically enriches its evidence dir — this
+exists because a text-only validator, handed raw pixels, once improvised its
+own OCR pipeline for 442k tokens. Extraction is a known command, so it runs
+in code, once:
+
+- `*.ocr.txt` next to every screenshot (tesseract),
+- a stripped-text `*.txt` next to every saved `*.html`,
+- a size + LIKELY BLANK flag per image (a uniform capture is failed evidence),
+- a baseline drift score + `*.diff.png` when a blessed baseline exists,
+- `toolkit.txt` recording what ran and what was skipped (missing tesseract or
+  magick degrades loudly, never silently).
+
+**Visual regression:** after a green run whose screenshots look right,
+`just bless <adw_id>` copies them into
+`adws/adw_data/validation/baselines/<flow>/` — review and commit them, they
+are project source. Every later capture records its drift against them. When
+a change intentionally alters how a page looks, re-bless after green; the
+`adw_build_validate` brief tells the builder to flag stale baselines in its
+report.
+
+agent-browser is the primary capture instrument — `snapshot -i` and
+`get text @ref` are text evidence a validator judges directly, screenshots
+feed the toolkit above. Prefer it over curl gymnastics; keep curl for status
+codes and API responses.
+
 ## Manual path (small edit, no agents)
 
 Edit `adws/adw_data/validation/validation.yaml` yourself — service `command`

@@ -44,10 +44,15 @@ Flow maintenance (this chain validates the RUNNING app afterwards):
   fail the library lint.
 - One journey per flow. Its opening lines must carry
   `# Flow: <name> — <scenario it evidences>`.
-- Flows are MECHANICAL evidence capture (curl, agent-browser), run with
-  $BASE_URL and $EVIDENCE_DIR set, cwd = $EVIDENCE_DIR; save evidence there and
-  exit non-zero on any checkable failure. Judgement belongs to the validator,
-  not the flow.
+- Flows are MECHANICAL evidence capture, run with $BASE_URL and $EVIDENCE_DIR
+  set, cwd = $EVIDENCE_DIR; save evidence there and exit non-zero on any
+  checkable failure. agent-browser is the primary instrument (open, snapshot -i,
+  get text @ref, screenshot); curl is the degrade path. Judgement belongs to
+  the validator, not the flow — and code enriches every screenshot afterwards
+  (OCR sidecar, blank check, baseline drift), so capture, don't analyse.
+- If your change intentionally alters how a page LOOKS, the old visual
+  baseline is now stale: say so in notes_for_next_agent so the engineer can
+  re-bless (adw_bless.py) after the run goes green.
 - This run executes your flows immediately — a flow that cannot run comes
   straight back to you as a failure."""
 
