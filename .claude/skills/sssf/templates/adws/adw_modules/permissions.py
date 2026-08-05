@@ -192,4 +192,8 @@ def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]
              else f"barred from {run.cfg.defaults.protected_files}")
     detail = "\n".join(f"  - {p} — {outcome}" for p, outcome in outcomes.items())
     raise PermissionBreach(
-        f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}")
+        f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}\n"
+        "NOTE: this compares tree change-sets, so it cannot tell WHO wrote. If "
+        "you (or a sync script) edited the repo while this phase was live, the "
+        "edit was attributed to the agent and rolled back — do not modify the "
+        "repo during a run.")
