@@ -11,9 +11,12 @@ Phases: engineer(request) -> planner -> git(commit_plan)
         -> builder -> code(test) [-> builder(fix) -> code(test) ... bounded]
         -> reviewer [-> builder(revise) -> reviewer ... bounded]
         -> code(retest, only if a revision changed code)
-        -> [code(provision) -> code(capture) -> validator -> code(teardown),
+        -> [builder(extend, instrument-scoped) -> code(coverage)
+            -> code(provision: build + start) -> code(capture: floor + probes)
+            -> validator(audit) -> code(teardown),
             only when adws/adw_data/validation/ is enabled; a visible
-            validate_skipped otherwise]
+            validate_skipped otherwise. Exit codes + mapping totality ARE the
+            verdict; the audit is a veto on dishonest instruments.]
         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
 
 Three commits, three work products, three authors. The plan, the code, and the
@@ -52,18 +55,24 @@ pinned before the first commit phase and printed in the request phase.
 """
 
 import argparse
+import os
 import sys
 
 from adw_modules import (agents, changes, gates, git_helper, quality, services,
                          session, utils)
-from adw_modules.data_types import (AgentCall, BuildOutput, ChangeCapture,
-                                    DocumentOutput, PhaseParams, PlanOutput,
-                                    ReviewOutput, ValidateOutput)
-from adw_validate import declaration_gap
+from adw_modules.data_types import (AgentCall, AuditOutput, BuildOutput,
+                                    ChangeCapture, DocumentOutput, ExtendOutput,
+                                    PhaseParams, PlanOutput, ReviewOutput)
+from adw_validate import EXTEND_BRIEF, declaration_gap
 
 REQUIRED_AGENTS = ["planner", "builder", "reviewer", "documenter"]
 MAX_FIX_LOOPS = 3
 MAX_REVISION_LOOPS = 2
+
+# The extend phase writes the measuring instrument, so like the setup builder
+# it is mechanically barred from the thing being measured: probes and the
+# registry only, never the app (permissions.enforce rolls back anything else).
+VALIDATION_WRITES = ["adws/adw_data/validation/"]
 
 DOCUMENT_NOTES = ("Read diff_path in full before writing. Document only what the "
                   "diff shows, then copy the write-up into app_docs/ as your task "
@@ -79,6 +88,11 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     validation_on = decl is not None and decl.enabled
     agents.validate(cfg, REQUIRED_AGENTS + (["validator"] if validation_on else []))
     run = session.ensure(cfg, adw_id)
+    # This chain IS the gated door: every commit it makes sits behind
+    # verification by construction, so the pre-commit guard hook (installed by
+    # setup-validation) lets its git phases through. Chains without the gate,
+    # and hand commits, are blocked by that hook once validation is enabled.
+    os.environ["SSSF_VALIDATED_CHAIN"] = run.adw_id
     baseline = git_helper.rev("HEAD")     # pinned before this run commits anything
 
     def commit(ph, envelope) -> None:
@@ -99,7 +113,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     with run.phase(PhaseParams(name="plan", kind="agent", owner="planner",
                                description="Turn the request into an implementable plan")) as ph:
         plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt,
-                                 gates=[gates.artifacts_exist, gates.files_non_empty]))
+                                 gates=[gates.artifacts_exist, gates.files_non_empty,
+                                        gates.criteria_present]))
 
     with run.phase(PhaseParams(name="commit_plan", kind="code", owner="git",
                                description="Put the spec on record before any code exists to blur it")) as ph:
@@ -161,11 +176,19 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                 and review is not None and review.approved)
 
     # The third question — does the RUNNING app behave — asked only when the
-    # project declared validation. One shot: a red verdict stops the commit
-    # and the tree holds the attempt (build-validate is the fix loop). A
-    # project without a declaration skips VISIBLY and continues; a declaration
-    # that is enabled but cannot run is a broken promise and fails.
+    # project declared validation. One shot: a red stops the commit and the
+    # tree holds the attempt (build-validate is the fix loop). A project
+    # without a declaration skips VISIBLY and continues; a declaration that is
+    # enabled but cannot run is a broken promise and fails.
+    #
+    # The verdict is COMPUTED, not opined: every acceptance criterion must map
+    # to a declared flow or probe (extend authors any that are missing, write-
+    # scoped to the instrument), code checks the mapping for totality before a
+    # server boots, executes the floor plus the cited probes, and green means
+    # every exit code was 0. The audit only vetoes — it checks the instrument
+    # and the evidence for honesty, and adds nothing to a proof it likes.
     validated = not validation_on
+    validation_reason = ""
     if verified and validation_on:
         gap = declaration_gap(decl)
         if gap:
@@ -173,37 +196,72 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                        description="Record that declared validation could not run — an enabled declaration that cannot execute must fail, not pass")) as ph:
                 ph.log(status="skipped", reason=gap,
                        next_step="see cookbooks/setup_validation.md")
+            validation_reason = f"declared validation could not run: {gap}"
         else:
-            handle = None
-            torn_down = False
-            verdict = None
-            try:
-                with run.phase(PhaseParams(name="provision", kind="code", owner="service",
-                                           description="Start the declared service and wait for health, with a hard deadline")) as ph:
-                    handle = services.start(run, decl.service)
-                    ph.log(pid=handle.process.pid, health_url=decl.service.health_url)
+            criteria = plan.acceptance_criteria
+            with run.phase(PhaseParams(name="extend", kind="agent", owner="builder",
+                                       description="Map every acceptance criterion to a flow or probe, authoring new probes where nothing covers the change — write-scoped to the instrument, never the app")) as ph:
+                extend = ph.call(AgentCall(
+                    output_type=ExtendOutput,
+                    prompt=(EXTEND_BRIEF + "Acceptance criteria to cover:\n"
+                            + "\n".join(f"- {c}" for c in criteria)
+                            + "\n\nThe original request follows.\n\n" + prompt),
+                    previous=build, writes=VALIDATION_WRITES,
+                    gates=[gates.diff_matches_claims]))
 
-                with run.phase(PhaseParams(name="capture", kind="code", owner="service",
-                                           description="Drive the declared flows mechanically and save identical evidence red or green")) as ph:
-                    capture = services.capture(run, decl)
-                    ph.log(flows=len(capture.flows), passed=capture.passed,
-                           failures=len(capture.failures))
+            # extend may have added probes, so the registry is re-read; whether
+            # validation gates AT ALL stays pinned to the declaration this run
+            # started under.
+            live_decl = services.load_declaration()
+            with run.phase(PhaseParams(name="coverage", kind="code", owner="service",
+                                       description="Check the criterion->probe mapping for totality — a hole fails here, before a server ever boots")) as ph:
+                cov_gaps = services.coverage_gaps(criteria, extend.mapping, live_decl)
+                probes = services.select_probes(live_decl, extend.mapping)
+                ph.log(criteria=len(criteria), probes_cited=len(probes),
+                       new_probes=len(extend.new_probes), gaps="; ".join(cov_gaps) or "none")
 
-                with run.phase(PhaseParams(name="validate", kind="agent", owner="validator",
-                                           description="Rule on the captured evidence: does the running app do what was asked")) as ph:
-                    verdict = ph.call(AgentCall(output_type=ValidateOutput, prompt=prompt,
-                                                previous=services.as_envelope(capture),
-                                                gates=[gates.artifacts_exist,
-                                                       gates.validation_verdict_consistent]))
+            if cov_gaps:
+                validation_reason = ("coverage gap — the requested change has no live "
+                                     "evidence mapped: " + " | ".join(cov_gaps))
+            else:
+                handle = None
+                torn_down = False
+                verdict = None
+                try:
+                    with run.phase(PhaseParams(name="provision", kind="code", owner="service",
+                                               description="Build the shippable artifact and start it, waiting for health with a hard deadline")) as ph:
+                        handle = services.start(run, live_decl.service)
+                        ph.log(pid=handle.process.pid, health_url=live_decl.service.health_url)
 
-                with run.phase(PhaseParams(name="teardown", kind="code", owner="service",
-                                           description="Stop the service children-first and verify its port actually freed")) as ph:
-                    torn_down = True
-                    ph.log(port_freed=services.stop(run, handle))
-            finally:
-                if handle is not None and not torn_down:
-                    services.stop(run, handle)   # crash and kill paths leave no orphan
-            validated = verdict is not None and verdict.passed
+                    with run.phase(PhaseParams(name="capture", kind="code", owner="service",
+                                               description="Execute the floor plus every cited probe mechanically — the exit codes are the verdict")) as ph:
+                        capture = services.capture(run, live_decl, probes=probes)
+                        ph.log(flows=len(capture.flows), passed=capture.passed,
+                               failures=len(capture.failures))
+
+                    with run.phase(PhaseParams(name="audit", kind="agent", owner="validator",
+                                               description="Audit the instrument and the evidence — a veto on dishonest probes or degraded captures, never the proof itself")) as ph:
+                        verdict = ph.call(AgentCall(
+                            output_type=AuditOutput,
+                            prompt=(prompt + "\n\nAcceptance criteria and claimed coverage:\n"
+                                    + "\n".join(f"- {m.criterion} -> {', '.join(m.covered_by)}"
+                                                for m in extend.mapping)),
+                            previous=services.as_envelope(capture),
+                            gates=[gates.artifacts_exist,
+                                   gates.validation_verdict_consistent]))
+
+                    with run.phase(PhaseParams(name="teardown", kind="code", owner="service",
+                                               description="Stop the service children-first and verify its port actually freed")) as ph:
+                        torn_down = True
+                        ph.log(port_freed=services.stop(run, handle))
+                finally:
+                    if handle is not None and not torn_down:
+                        services.stop(run, handle)   # crash and kill paths leave no orphan
+                validated = capture.passed and verdict is not None and verdict.passed
+                if not validated:
+                    validation_reason = ("a flow or probe's assertion failed against the "
+                                         "running app" if not capture.passed
+                                         else "the audit vetoed the instrument or evidence")
     elif verified:
         # No declaration (or disabled): the chain stays useful, but the skip is
         # on the record — a run that did not validate must never read as if it did.
@@ -244,8 +302,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
     return run.finish(accepted=verified and validated,
                       reason=("the suite or the review never came back clean" if not verified
-                              else "declared validation did not come back green — nothing was "
-                                   "committed; the working tree holds the attempt"))
+                              else (validation_reason or "declared validation did not come back green")
+                              + " — nothing was committed; the working tree holds the attempt"))
 
 
 if __name__ == "__main__":

@@ -88,6 +88,14 @@ class PlanOutput(EnvelopeBase):
     # work product, so a chain that commits per step never reuses one agent's
     # words for another agent's diff.
     commit_message: str = ""
+    # The plan's proof obligations: user-observable, falsifiable statements the
+    # running app must demonstrate before this work may ship. These are what
+    # the extend phase must map to flows/probes (checked for totality in code)
+    # — a criterion is the unit of "validated", so vague or missing criteria
+    # make the whole downstream guarantee vacuous. Work with nothing user-
+    # visible states its honest criterion: "no observable change to any
+    # declared journey".
+    acceptance_criteria: list[str] = Field(default_factory=list)
 
 
 class BuildOutput(EnvelopeBase):
@@ -175,10 +183,19 @@ class QualityResult(BaseModel):
 # ── Validation (dev server + mechanical evidence capture, deterministic) ─────
 
 class ServiceSpec(BaseModel):
-    """The app under validation: how to start it and how to know it is up."""
+    """The app under validation: how to start it and how to know it is up.
+
+    `prepare` is the production pipeline's build step (e.g. `next build`), run
+    to completion before `command` starts the server. Green-on-dev is not
+    ready-to-ship: dev servers hide build failures, hydration mismatches, and
+    env-inlining differences, so a declaration that validates the artifact you
+    would actually deploy runs the prod build here and serves it in `command`.
+    """
 
     command: list[str]              # argv, never a shell string
     health_url: str                 # polled until it answers; also seeds BASE_URL
+    prepare: Optional[list[str]] = None      # argv, run to completion pre-start
+    prepare_timeout_seconds: int = 600
     startup_timeout_seconds: int = 60
     shutdown_grace_seconds: int = 10
     env: dict[str, str] = Field(default_factory=dict)   # overrides ON TOP of operator_env
@@ -203,6 +220,13 @@ class ValidationDecl(BaseModel):
     enabled: bool = False
     service: Optional[ServiceSpec] = None
     flows: list[FlowSpec] = Field(default_factory=list)
+    # Request-scoped probes: acceptance journeys authored by the extend phase,
+    # living under flows/probes/. Unlike `flows` (the permanent regression
+    # floor, ALL run every pass), a probe only runs when a run's coverage
+    # mapping selects it — the library grows with every request while the
+    # always-on suite stays minimal. Promotion to `flows` is a deliberate act
+    # (adw_promote.py), never automatic.
+    probes: list[FlowSpec] = Field(default_factory=list)
 
 
 class FlowResult(BaseModel):
@@ -254,6 +278,40 @@ class ValidateOutput(EnvelopeBase):
     passed: bool = False
     scenarios: list[ScenarioVerdict] = Field(default_factory=list)
     blocking: list[str] = Field(default_factory=list)   # what must change before it can pass
+
+
+class AuditOutput(ValidateOutput):
+    """The instrument audit: is the PROOF honest, not is the app right.
+
+    Exit codes already decided whether the app behaved — every flow and probe
+    is a falsifiable statement code executed. What no exit code can catch is a
+    dishonest instrument: criteria that understate the request, or a probe that
+    asserts less than its criterion means and trivially passes. This verdict is
+    a veto, never the proof: its red stops the ship, its green adds nothing to
+    what the exit codes already established. Same field shape as ValidateOutput
+    on purpose — the same consistency gate refutes a self-contradictory ruling.
+    """
+
+
+class CriterionCoverage(BaseModel):
+    """One acceptance criterion and the flows/probes that discharge it."""
+
+    criterion: str                  # the plan's words, verbatim
+    covered_by: list[str] = Field(default_factory=list)  # declared flow/probe names
+
+
+class ExtendOutput(EnvelopeBase):
+    """The extend phase's proof obligation: every criterion mapped to evidence.
+
+    The mapping is a CLAIM — code checks it for totality (no criterion left
+    unmapped, no name that is not a declared flow or probe) before a server
+    ever boots, and the audit checks it for honesty. `new_probes` lists any
+    probe scripts written this run, so the trace shows what the instrument
+    gained.
+    """
+
+    mapping: list[CriterionCoverage] = Field(default_factory=list)
+    new_probes: list[str] = Field(default_factory=list)
 
 
 # ── Change capture (git diff, deterministic) ─────────────────────────────────

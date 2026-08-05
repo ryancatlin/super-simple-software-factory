@@ -38,6 +38,7 @@ Respond with ONLY valid JSON matching `PlanOutput` — no prose before or after:
   "summary": "<one sentence describing the plan>",
   "artifacts": ["<context_handoff_dir>/plan.md", "specs/<adw_id>_<slug>.md"],
   "commit_message": "<imperative one-line git subject for committing THIS PLAN DOCUMENT, not the work it describes — e.g. 'Add spec for the /health endpoint'>",
+  "acceptance_criteria": ["<user-observable, falsifiable statement the RUNNING app must demonstrate — one per promise the request makes; 'no observable change to any declared journey' for invisible work>"],
   "notes_for_next_agent": "<what the builder must know>"
 }
 ```

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SSSF guard: once validation is enabled, app code ships through a validated
+# chain — the side doors close.
+#
+# The chains put every commit behind verification, review, and app validation,
+# but a guarantee that only holds on one door is not a guarantee. This hook is
+# the other doors: hand commits and unvalidated chains are blocked whenever
+# the staged change reaches app code, with `git commit --no-verify` as the
+# visible, deliberate override (the trace never signs off on it).
+#
+# Allowed through:
+#   - validated chains (simple-sdlc, build-validate, setup-validation) — they
+#     export SSSF_VALIDATED_CHAIN, and their sequencing IS the guarantee.
+#     Agents inside a chain inherit the variable, but an agent-authored commit
+#     is separately undone in code (permissions.undo_agent_commits), so this
+#     is not the layer that stops them.
+#   - commits touching only factory/meta paths (adws/, docs, specs, requests,
+#     dotfiles) — chores never needed app validation.
+#   - any repo with no enabled validation declaration.
+#
+# Installed by setup-validation once the declaration is proven, or by hand:
+#   just guard
+set -euo pipefail
+
+[ -n "${SSSF_VALIDATED_CHAIN:-}" ] && exit 0
+
+decl="adws/adw_data/validation/validation.yaml"
+[ -f "$decl" ] || exit 0
+grep -Eq '^enabled:[[:space:]]*true' "$decl" || exit 0
+
+exempt='^(adws/|app_docs/|docs/|specs/|requests/|\.claude/|\.github/|[^/]+\.(md|txt)$|\.[^/]+$)'
+blocked=$(git diff --cached --name-only | grep -Ev "$exempt" || true)
+[ -z "$blocked" ] && exit 0
+
+{
+  echo "sssf guard: validation is enabled, and these staged paths are app code:"
+  echo "$blocked" | sed 's/^/  - /'
+  echo
+  echo "App code ships through a validated chain:  just simple-sdlc \"...\""
+  echo "                                    (or):  just build-validate \"...\""
+  echo "Deliberate override: git commit --no-verify  — allowed, but the trace"
+  echo "will hold no green validation session for this commit."
+} >&2
+exit 1

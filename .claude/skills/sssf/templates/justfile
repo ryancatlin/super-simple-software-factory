@@ -85,10 +85,19 @@ bless ADW_ID:
 evidence ADW_ID:
     @ls -R adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ && (xdg-open adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ 2>/dev/null || open adws/adw_data/sessions/{{ADW_ID}}/context_handoff/validation/ 2>/dev/null || true)
 
-# the flow catalogue: every journey and shared step in the library
+# the flow catalogue: floor journeys, request probes, and shared steps
 flows:
     @grep -H '^# Flow:' adws/adw_data/validation/flows/*.sh 2>/dev/null || echo "no flows yet"
+    @grep -H '^# Probe:' adws/adw_data/validation/flows/probes/*.sh 2>/dev/null || true
     @grep -H '^# Step:' adws/adw_data/validation/flows/lib/*.sh 2>/dev/null || true
+
+# a proven probe joins the always-on floor, deliberately: just promote <probe_name>
+promote NAME:
+    uv run adws/adw_promote.py {{NAME}}
+
+# install the pre-commit guard: app code only ships through a validated chain
+guard:
+    cp adws/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit && echo "guard installed (override: git commit --no-verify)"
 
 # ── watch it ────────────────────────────────────────────────────────────────
 # Reads never block a running workflow, the db is WAL. Poll as hard as you like.

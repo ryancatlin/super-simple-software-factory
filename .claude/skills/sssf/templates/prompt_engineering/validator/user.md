@@ -1,4 +1,4 @@
-# Validation Task
+# Audit Task
 
 ## Variables
 
@@ -16,29 +16,28 @@
 
 ## Task
 
-Rule on whether the captured evidence shows the running app doing what `prompt` asked.
+Audit the proof, not the app. The exit codes in `previous_envelope` already decided whether the running app behaved; your ruling is a veto on dishonest instruments and degraded evidence.
 
-1. List the scenarios the request implies — each thing the app should demonstrably do.
-2. Read the evidence in every `previous_envelope.evidence_dirs` entry: `flow.log`, saved responses, snapshots, screenshots.
-3. Rule on every scenario — one `scenarios` entry each, citing the evidence file.
-4. Write your ruling to `<context_handoff_dir>/validation_report.md`, then emit your `Report` JSON.
+1. List your audit scenarios: criteria-vs-request (when `prompt` carries acceptance criteria and a coverage mapping), probes-vs-criteria (open each cited script — do its assertions test the criterion, not less?), and evidence sanity per `previous_envelope.evidence_dirs` entry (start with `toolkit.txt`; blank-flagged screenshots and unexplained baseline drift are degraded evidence).
+2. Rule on every scenario — one `scenarios` entry each, citing the script or evidence file.
+3. Write your ruling to `<context_handoff_dir>/validation_report.md`, then emit your `Report` JSON.
 
 ## Report
 
-Respond with ONLY valid JSON matching `ValidateOutput` — no prose before or after:
+Respond with ONLY valid JSON matching `AuditOutput` — no prose before or after:
 
 ```json
 {
   "status": "success",
   "passed": false,
-  "summary": "<one sentence: N of M scenarios passed>",
+  "summary": "<one sentence: N of M audit scenarios passed>",
   "scenarios": [
-    { "scenario": "<what the app should demonstrably do>", "passed": true, "evidence": "<evidence_dir>/home.html — 200, expected heading present" }
+    { "scenario": "<what was audited: a criterion's honesty, a probe's assertions, an evidence dir's sanity>", "passed": true, "evidence": "<the script or evidence file behind the ruling>" }
   ],
-  "blocking": ["<what must change before validation can pass>"],
+  "blocking": ["<the specific dishonesty or degradation that must be fixed>"],
   "artifacts": ["<context_handoff_dir>/validation_report.md"],
-  "notes_for_next_agent": "<what the builder must fix, or how this was verified if passed>"
+  "notes_for_next_agent": "<what must change, or what was verified if passed>"
 }
 ```
 
-`status` is `success` when the validation itself completed — it is not the verdict. The verdict is `passed`, and it is true only when `scenarios` has no failed entry and `blocking` is empty.
+`status` is `success` when the audit itself completed — it is not the verdict. The verdict is `passed`, and it is true only when `scenarios` has no failed entry and `blocking` is empty. Remember: your green does not make the run pass — the exit codes do; your red makes it fail.

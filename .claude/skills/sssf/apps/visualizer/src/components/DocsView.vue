@@ -39,12 +39,12 @@ const GROUPS: Group[] = [
       { cmd: 'just plan', what: 'Plan only — a spec the builder could implement without questions.', example: 'just plan "add a /health endpoint"' },
       { cmd: 'just plan-build', what: 'Planner, then builder, then commit.', example: 'just plan-build "add a /health endpoint"' },
       { cmd: 'just sdlc', what: 'Plan, build, test, commit.', example: 'just sdlc "add a /health endpoint"' },
-      { cmd: 'just simple-sdlc', what: 'The full chain: review, docs, and — when a validation declaration is enabled — the running app must validate green before the code commits.', example: 'just simple-sdlc "add a /health endpoint"' },
+      { cmd: 'just simple-sdlc', what: 'The full chain: review, docs, and — when validation is enabled — every acceptance criterion must map to a probe and prove itself by exit code against the shippable build before the code commits.', example: 'just simple-sdlc "add a /health endpoint"' },
     ],
   },
   {
     title: 'Validate the running app',
-    blurb: 'Code provisions the dev server, drives declared flows, and tears down; the validator agent only rules on captured evidence. Needs adws/adw_data/validation/ enabled — until then runs report skipped-and-red, never green.',
+    blurb: 'Code builds the shippable artifact, serves it, executes the flow library, and computes the verdict from exit codes; the audit agent only vetoes dishonest instruments. The floor (flows/) always runs; probes (flows/probes/) run when a request cites them. Needs adws/adw_data/validation/ enabled — until then runs report skipped-and-red, never green.',
     accent: 'var(--cyan)',
     commands: [
       { cmd: 'just setup-validation', what: 'The factory builds this project’s validation itself — scout, declare, prove green, commit. The setup builder is mechanically limited to the declaration.', example: 'just setup-validation "the journeys that matter are ..."' },
@@ -52,7 +52,9 @@ const GROUPS: Group[] = [
       { cmd: 'just build-validate', what: 'Build a change, then prove the running app still behaves — bounded fix loop on red.', example: 'just build-validate "dedupe the double lookup; journeys stay green"' },
       { cmd: 'just bless', what: 'Accept a run’s screenshots as the visual baselines for future drift diffs.', example: 'just bless <adw_id>' },
       { cmd: 'just evidence', what: 'Open a run’s validation evidence on disk: screenshots, diffs, OCR sidecars.', example: 'just evidence <adw_id>' },
-      { cmd: 'just flows', what: 'The flow catalogue — every journey and shared lib step in the library.' },
+      { cmd: 'just flows', what: 'The catalogue — floor journeys, request probes, and shared lib steps.' },
+      { cmd: 'just promote', what: 'A proven probe joins the always-on floor — deliberate, never automatic, so the floor stays curated.', example: 'just promote <probe_name>' },
+      { cmd: 'just guard', what: 'Install the pre-commit guard: once validation is enabled, app code only ships through a validated chain (override: git commit --no-verify).' },
     ],
   },
   {

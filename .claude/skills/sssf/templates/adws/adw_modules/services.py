@@ -88,11 +88,38 @@ def start(run, spec: ServiceSpec) -> ServiceHandle:
     log_dir = run.context_handoff_dir / "validation"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "service.log"
+    log_path.write_text("")         # fresh log per provision, prepare included
     command = shlex.join(spec.command)
     env = {**operator_env(), **spec.env}
 
+    # The prod pipeline's build step, run to completion before the server
+    # starts. Its own deadline, its own honest failure: a build that breaks
+    # is a red finding here, never a server that silently serves stale code.
+    if spec.prepare:
+        prepare_cmd = shlex.join(spec.prepare)
+        run.console.note(f"prepare: {prepare_cmd}")
+        started = time.monotonic()
+        try:
+            prep = subprocess.run(spec.prepare, cwd=run.repo_root, env=env,
+                                  capture_output=True, text=True,
+                                  timeout=spec.prepare_timeout_seconds)
+        except subprocess.TimeoutExpired as error:
+            tail = ((error.stdout or "") + (error.stderr or ""))[-TAIL_CHARS:]
+            raise RuntimeError(
+                f"prepare `{prepare_cmd}` timed out after "
+                f"{spec.prepare_timeout_seconds}s — tail:\n{tail}")
+        with log_path.open("a") as log:
+            log.write(f"$ {prepare_cmd}\nexit: {prep.returncode} "
+                      f"({time.monotonic() - started:.1f}s)\n\n"
+                      f"{prep.stdout}\n{prep.stderr}\n\n")
+        if prep.returncode != 0:
+            raise RuntimeError(
+                f"prepare `{prepare_cmd}` exited {prep.returncode} — the "
+                f"shippable artifact does not build. Tail:\n"
+                f"{(prep.stdout + prep.stderr)[-TAIL_CHARS:]}")
+
     run.console.note(f"service: {command}")
-    with log_path.open("w") as log:
+    with log_path.open("a") as log:
         log.write(f"$ {command}\nstarted_at: {now_iso()}\n\n")
         log.flush()
         process = subprocess.Popen(spec.command, cwd=run.repo_root, env=env,
@@ -149,9 +176,11 @@ def stop(run, handle: Optional[ServiceHandle]) -> bool:
 # ── flow library neatness (mechanical, not disciplinary) ────────────────────
 
 FLOWS_DIR = "adws/adw_data/validation/flows"
-LIB_DIR = "adws/adw_data/validation/flows/lib"   # shared steps, sourced by flows
+LIB_DIR = "adws/adw_data/validation/flows/lib"    # shared steps, sourced by flows
+PROBES_DIR = "adws/adw_data/validation/flows/probes"  # request-scoped acceptance journeys
 HEADER_PREFIX = "# Flow:"
 LIB_HEADER_PREFIX = "# Step:"
+PROBE_HEADER_PREFIX = "# Probe:"
 HEADER_SCAN_LINES = 5
 
 
@@ -175,24 +204,38 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
     declared: dict = {}
     seen_names: set[str] = set()
     lib_dir = (Path(repo_root) / LIB_DIR).resolve()
-    for flow in decl.flows:
-        if flow.name in seen_names:
-            failures.append(f"{flow.name}: declared more than once in validation.yaml")
-        seen_names.add(flow.name)
-        script = Path(repo_root) / flow.script
-        if not script.is_file():
-            failures.append(f"{flow.name}: declared script {flow.script} does not exist")
-            continue
-        if script.resolve().is_relative_to(lib_dir):
-            failures.append(
-                f"{flow.name}: {flow.script} lives under flows/lib/ — lib holds "
-                f"shared steps flows source, never flows themselves. Move it up.")
-        declared[script.resolve()] = flow.name
-        head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
-        if not any(line.startswith(HEADER_PREFIX) for line in head):
-            failures.append(
-                f"{flow.name}: {flow.script} is missing its `{HEADER_PREFIX} <name> — "
-                f"<scenario it evidences>` header in the first {HEADER_SCAN_LINES} lines")
+    probes_dir = (Path(repo_root) / PROBES_DIR).resolve()
+    for tier, header, specs in (("flow", HEADER_PREFIX, decl.flows),
+                                ("probe", PROBE_HEADER_PREFIX, decl.probes)):
+        for flow in specs:
+            if flow.name in seen_names:
+                failures.append(f"{flow.name}: declared more than once in validation.yaml")
+            seen_names.add(flow.name)
+            script = Path(repo_root) / flow.script
+            if not script.is_file():
+                failures.append(f"{flow.name}: declared script {flow.script} does not exist")
+                continue
+            if script.resolve().is_relative_to(lib_dir):
+                failures.append(
+                    f"{flow.name}: {flow.script} lives under flows/lib/ — lib holds "
+                    f"shared steps flows source, never flows themselves. Move it up.")
+            in_probes = script.resolve().is_relative_to(probes_dir)
+            if tier == "flow" and in_probes:
+                failures.append(
+                    f"{flow.name}: {flow.script} is declared as a floor flow but lives "
+                    f"under flows/probes/ — promote it properly (adw_promote.py moves "
+                    f"the file and the declaration entry together).")
+            if tier == "probe" and not in_probes:
+                failures.append(
+                    f"{flow.name}: {flow.script} is declared as a probe but lives "
+                    f"outside flows/probes/ — probes live there so the floor stays "
+                    f"visibly minimal.")
+            declared[script.resolve()] = flow.name
+            head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
+            if not any(line.startswith(header) for line in head):
+                failures.append(
+                    f"{flow.name}: {flow.script} is missing its `{header} <name> — "
+                    f"<what it evidences>` header in the first {HEADER_SCAN_LINES} lines")
     flows_dir = Path(repo_root) / FLOWS_DIR
     if flows_dir.is_dir():
         for script in sorted(flows_dir.rglob("*.sh")):
@@ -206,17 +249,60 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
                 continue
             if script.resolve() not in declared:
                 rel = script.relative_to(repo_root)
+                registry = "probes:" if script.resolve().is_relative_to(probes_dir) else "flows:"
                 failures.append(
-                    f"{rel}: orphan — not declared in validation.yaml, so it never "
-                    f"runs. Declare it, delete it, or move it to flows/lib/ if it "
-                    f"is a shared step other flows source.")
+                    f"{rel}: orphan — not declared under `{registry}` in "
+                    f"validation.yaml, so it never runs. Declare it, delete it, or "
+                    f"move it to flows/lib/ if it is a shared step other flows source.")
     return failures
+
+
+# ── coverage (the proof obligation, checked in code) ─────────────────────────
+
+def _norm(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def coverage_gaps(criteria: list[str], mapping, decl: ValidationDecl) -> list[str]:
+    """Totality check on the extend phase's mapping — pure code, milliseconds.
+
+    Every acceptance criterion must be mapped to at least one DECLARED flow or
+    probe; a criterion with no coverage, or coverage citing a name nothing
+    declares, is a hole the run fails on before a server ever boots. This is
+    the check run 2ab14be3 was missing: honest work with no live evidence for
+    the thing that actually changed.
+    """
+    known = {f.name for f in decl.flows} | {p.name for p in decl.probes}
+    claimed = {_norm(m.criterion): list(m.covered_by) for m in mapping}
+    gaps: list[str] = []
+    for criterion in criteria:
+        covered_by = claimed.get(_norm(criterion))
+        if not covered_by:
+            gaps.append(f"criterion has no coverage: {criterion!r} — map it to a "
+                        f"declared flow or probe (author one if none fits)")
+            continue
+        unknown = [n for n in covered_by if n not in known]
+        if unknown:
+            gaps.append(f"criterion {criterion!r} cites undeclared name(s): "
+                        f"{', '.join(unknown)} — declare them in validation.yaml")
+    return gaps
+
+
+def select_probes(decl: ValidationDecl, mapping) -> list["FlowSpec"]:
+    """The probes this run's mapping cites — only those execute this pass.
+
+    The floor always runs in full; probes are additive acceptance evidence, so
+    an uncited probe stays on the shelf and costs nothing.
+    """
+    cited = {name for m in mapping for name in m.covered_by}
+    return [p for p in decl.probes if p.name in cited]
 
 
 # ── capture ──────────────────────────────────────────────────────────────────
 
-def capture(run, decl: ValidationDecl) -> CaptureResult:
-    """Run every declared flow script mechanically and collect the evidence.
+def capture(run, decl: ValidationDecl,
+            probes: Optional[list[FlowSpec]] = None) -> CaptureResult:
+    """Run the floor (every declared flow) plus any selected probes; keep evidence.
 
     Flows run from their own evidence dir (agent-browser screenshots save to
     the cwd) with BASE_URL and EVIDENCE_DIR set. Same evidence every run,
@@ -233,7 +319,8 @@ def capture(run, decl: ValidationDecl) -> CaptureResult:
         return CaptureResult(passed=False, base_url=base_url, flows=[],
                              failures=[f"flow library: {v}" for v in lint])
     seq = run.phases[-1].seq if run.phases else 0
-    results = [_run_flow(run, flow, base_url, seq) for flow in decl.flows]
+    results = [_run_flow(run, flow, base_url, seq)
+               for flow in [*decl.flows, *(probes or [])]]
     failures = [
         f"{r.name}: `{r.command}` exited {r.returncode}\n{r.output_tail}".rstrip()
         for r in results if not r.passed

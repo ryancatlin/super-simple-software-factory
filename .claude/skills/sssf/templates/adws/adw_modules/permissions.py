@@ -47,6 +47,52 @@ def _git(args: list[str], cwd) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
+def head_ref(run) -> tuple[str, str]:
+    """(symbolic ref, sha) of HEAD — taken beside snapshot() as the commit guard's baseline."""
+    return (_git(["symbolic-ref", "-q", "HEAD"], run.repo_root).strip(),
+            _git(["rev-parse", "HEAD"], run.repo_root).strip())
+
+
+def undo_agent_commits(run, agent: AgentConfig, before: tuple[str, str]) -> list[str]:
+    """Committing is a CODE phase's act — an agent-authored commit is undone.
+
+    The chains put every commit behind verification, but `bash` makes
+    `git commit` physically available, and one builder used it: code landed on
+    the branch before review or validation ever ran, and the gated commit phase
+    then found nothing to commit. Prompts alone are wishes, so this is the
+    mechanical version: HEAD is pinned before the agent runs, and any commits
+    it added on the same branch are soft-reset away afterwards — the WORK stays
+    in the tree, staged, exactly where the gated commit phase expects it; only
+    the premature history disappears. Returns the undone `log --oneline` lines.
+
+    A HEAD move that soft reset cannot honestly repair — a branch switch or a
+    history rewrite — is a PermissionBreach: aborting loudly beats guessing at
+    what the agent meant. Same caveat as the tree comparison: this cannot tell
+    WHO moved HEAD, so do not commit in the repo while a phase is live.
+    """
+    branch_before, sha_before = before
+    branch_now, sha_now = head_ref(run)
+    if (branch_now, sha_now) == (branch_before, sha_before):
+        return []
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha_before, sha_now],
+        cwd=run.repo_root, capture_output=True).returncode == 0
+    if branch_now != branch_before or not ancestor:
+        raise PermissionBreach(
+            f"{agent.name} moved HEAD from {sha_before[:7]} ({branch_before or 'detached'}) "
+            f"to {sha_now[:7]} ({branch_now or 'detached'}) in a way soft reset cannot "
+            "honestly repair (branch switch or history rewrite). Repair by hand.")
+    undone = _git(["log", "--oneline", f"{sha_before}..{sha_now}"],
+                  run.repo_root).strip().splitlines()
+    result = subprocess.run(["git", "reset", "--soft", sha_before],
+                            cwd=run.repo_root, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise PermissionBreach(
+            f"{agent.name} committed ({', '.join(undone) or sha_now[:7]}) and the undo "
+            f"failed: {result.stderr.strip()}. Repair by hand.")
+    return undone
+
+
 def snapshot(run) -> dict[str, str]:
     """Fingerprint every path the working tree currently differs on.
 

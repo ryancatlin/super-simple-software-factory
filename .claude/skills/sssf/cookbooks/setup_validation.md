@@ -57,6 +57,33 @@ declared flow living under lib/ is itself a violation. Agents are briefed to
 read the catalogue before writing and to extract a step the moment a second
 flow needs it — the library grows deduplicated by construction.
 
+**Acceptance tier — `flows/probes/`:** request-scoped journeys with a
+`# Probe: <name> — <criterion it discharges>` header, declared under `probes:`
+in `validation.yaml`. Unlike the floor (`flows/`, ALL run every pass), a probe
+only executes when a run's coverage mapping cites it — so the always-on suite
+stays minimal while the probe library grows with every request. In the
+validated chains (`simple-sdlc`, `build-validate`) an instrument-scoped extend
+phase maps every acceptance criterion to a flow or probe, authoring new probes
+from lib steps where nothing covers the change; code checks the mapping for
+totality BEFORE the server boots, and the verdict is computed from exit codes
+— the audit agent only vetoes dishonest instruments or degraded evidence. A
+probe that proves durable is promoted to the floor deliberately:
+`just promote <probe_name>`.
+
+**Ship-shaped, not dev-shaped:** the declaration validates the artifact you
+would deploy. `service.prepare` is the production build (e.g.
+`["npm","run","build"]`, with `prepare_timeout_seconds`); `service.command`
+serves that build. Dev mode hides build failures, hydration mismatches, and
+env-inlining differences — use it only when the stack has no prod-mode local
+serve.
+
+**The guard:** once the declaration is proven, setup-validation installs a
+pre-commit hook (also: `just guard`): app code only commits through a
+validated chain; chores under `adws/`, docs, and specs pass freely;
+`git commit --no-verify` is the visible, deliberate override. Agents that try
+to `git commit` mid-phase are separately undone in code — the work stays in
+the tree, the premature history does not.
+
 **Seeing the proof:** every run's evidence is on disk under the session's
 `context_handoff/validation/<NN>_<flow>/` — `just evidence <adw_id>` lists it
 and opens the folder: screenshots, `*.diff.png`, OCR and text sidecars,

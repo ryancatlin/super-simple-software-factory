@@ -7,75 +7,69 @@
 Usage:
     uv run adws/adw_build_validate.py "<prompt or path/to/prompt.md>" [--config adws/adw_sssf_config/sssf.config.yaml] [--adw-id a1b2c3d4]
 
-Phases: engineer(request) -> builder -> [code(provision) -> code(capture) -> validator -> code(teardown) -> builder(revise) ... bounded]
+Phases: engineer(request) -> builder
+        -> [builder(extend, instrument-scoped) -> code(coverage)
+            -> code(provision: build + start) -> code(capture: floor + probes)
+            -> validator(audit) -> code(teardown) -> builder(revise) ... bounded]
 
-The validation cycle is the one from adw_validate.py, run after a build and
-looped: when the validator's ruling is a fail, the findings go back to the
-builder as an envelope and the whole cycle runs again — fresh server, fresh
-evidence — a bounded number of times. Each iteration tears its server down
-before the builder edits, so nothing is left serving stale code, and teardown
-also sits in a `finally` so crash and kill paths leave no orphan either.
+Each cycle: the extend phase maps the change's acceptance criteria to flows
+and probes (authoring any that are missing, write-scoped to the declaration),
+code checks the mapping for totality, executes the floor plus the cited
+probes against the shippable build, and computes the verdict from exit codes;
+the audit only vetoes. On red the findings go back to the builder and the
+whole cycle runs again — fresh server, fresh evidence — a bounded number of
+times. Each iteration tears its server down before the builder edits, so
+nothing is left serving stale code, and teardown also sits in a `finally` so
+crash and kill paths leave no orphan either.
 
 Requires the project's validation declaration to be enabled — see
 cookbooks/setup_validation.md. Until then the run reports skipped-and-red.
 """
 
 import argparse
+import os
 import sys
 
 from adw_modules import agents, gates, services, session, utils
-from adw_modules.data_types import (AgentCall, BuildOutput, GenericOutput,
-                                    PhaseParams, ValidateOutput)
-from adw_validate import declaration_gap
+from adw_modules.data_types import (AgentCall, AuditOutput, BuildOutput,
+                                    ExtendOutput, GenericOutput, PhaseParams)
+from adw_validate import EXTEND_BRIEF, declaration_gap
 
 REQUIRED_AGENTS = ["builder", "validator"]
 MAX_VALIDATION_LOOPS = 2
 
-# The call site defines how an agent is used: the builder's identity lives in
-# its system.md, but THIS chain also makes it the flow library's maintainer.
-# Every feature ships with the flow that evidences it, and the same run
-# executes that flow immediately — proven at birth, red if it rots.
-FLOW_BRIEF = """
+# The instrument-maker split: the builder builds the APP; a separate extend
+# call — the same agent, write-scoped in code to the declaration — decides how
+# the change is proven and authors any missing probes. One hand does the work,
+# a different (mechanically bounded) hand builds the measure of it.
+VALIDATION_WRITES = ["adws/adw_data/validation/"]
 
-Flow maintenance (this chain validates the RUNNING app afterwards):
-- FIND before you write: validation.yaml is the flow registry;
-  `grep '^# Flow:' adws/adw_data/validation/flows/*.sh` is the catalogue;
-  `grep '^# Step:' adws/adw_data/validation/flows/lib/*.sh` lists shared steps.
-  Extend an existing flow when the journey already has one — never duplicate it.
-- REUSE shared steps: flows `source` lib scripts (e.g.
-  `source "$(dirname "$0")/lib/login.sh"`). When a second flow needs a step an
-  existing flow already performs (login, seeded record), extract it into
-  flows/lib/ with a `# Step: <name> — <what it does>` header instead of
-  copying it. Lib scripts are never declared as flows.
-- If your change adds or alters a user-visible journey, add or update the flow
-  that evidences it: a bash script in adws/adw_data/validation/flows/, declared
-  in adws/adw_data/validation/validation.yaml. Undeclared scripts never run and
-  fail the library lint.
-- One journey per flow. Its opening lines must carry
-  `# Flow: <name> — <scenario it evidences>`.
-- Flows are MECHANICAL evidence capture, run with $BASE_URL and $EVIDENCE_DIR
-  set, cwd = $EVIDENCE_DIR; save evidence there and exit non-zero on any
-  checkable failure. agent-browser is the primary instrument (open, snapshot -i,
-  get text @ref, screenshot — ALWAYS pass screenshot an explicit path like
-  "$EVIDENCE_DIR/<name>.png"; its default saves to its own tmp dir, not the
-  cwd). A client-rendered page must be polled until the expected content
-  appears in a snapshot (bounded retries, then fail). curl is the degrade
-  path. Judgement belongs to
-  the validator, not the flow — and code enriches every screenshot afterwards
-  (OCR sidecar, blank check, baseline drift), so capture, don't analyse.
+BUILD_BRIEF = """
+
+This chain proves the RUNNING app afterwards — code provisions the shippable
+build, executes the flow library, and computes the verdict from exit codes:
+- Do NOT start the service, install browsers, or run validation flows
+  yourself; everything mechanical runs the moment you report.
+- Do NOT edit adws/adw_data/validation/ — a separate instrument-scoped phase
+  owns the probes and the registry.
 - If your change intentionally alters how a page LOOKS, the old visual
   baseline is now stale: say so in notes_for_next_agent so the engineer can
-  re-bless (adw_bless.py) after the run goes green.
-- This run executes your flows immediately — a flow that cannot run comes
-  straight back to you as a failure. Do NOT start the service or run the
-  flows yourself: code provisions, captures, and tears down the moment you
-  report, and a server you leave behind collides with that provision."""
+  re-bless (adw_bless.py) after the run goes green."""
+
+# Unlike simple-sdlc there is no plan here, so the extend phase also STATES the
+# acceptance criteria it maps — the audit then checks both against the request.
+BV_CRITERIA_NOTE = ("No plan precedes you: derive the acceptance criteria from the "
+                    "request yourself — user-observable, falsifiable — and map every "
+                    "one. An empty mapping fails the coverage check.\n\n")
 
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
     cfg = agents.load_config(config)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
+    # A validated chain — its commits sit behind the verdict by construction,
+    # so the pre-commit guard hook lets its git phases through.
+    os.environ["SSSF_VALIDATED_CHAIN"] = run.adw_id
 
     with run.phase(PhaseParams(name="request", kind="engineer", owner=run.engineer,
                                description="Capture the incoming ask")) as ph:
@@ -92,66 +86,99 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
     with run.phase(PhaseParams(name="build", kind="agent", owner="builder",
                                description="Implement the request")) as ph:
-        ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + FLOW_BRIEF,
-                          gates=[gates.diff_matches_claims]))
+        build = ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + BUILD_BRIEF,
+                                  gates=[gates.diff_matches_claims]))
 
-    verdict = None
+    passed = False
+    previous = build
     for i in range(1, MAX_VALIDATION_LOOPS + 1):
-        handle = None
-        torn_down = False
-        verdict = None
-        try:
-            with run.phase(PhaseParams(name=f"provision_{i}", kind="code", owner="service",
-                                       description="Start the declared service and wait for health, with a hard deadline")) as ph:
-                handle = services.start(run, decl.service)
-                ph.log(pid=handle.process.pid, health_url=decl.service.health_url)
+        with run.phase(PhaseParams(name=f"extend_{i}", kind="agent", owner="builder",
+                                   description="Map the change's acceptance criteria to flows and probes, authoring any that are missing — write-scoped to the instrument, never the app")) as ph:
+            extend = ph.call(AgentCall(output_type=ExtendOutput,
+                                       prompt=EXTEND_BRIEF + BV_CRITERIA_NOTE + prompt,
+                                       previous=previous, writes=VALIDATION_WRITES,
+                                       gates=[gates.diff_matches_claims]))
 
-            with run.phase(PhaseParams(name=f"capture_{i}", kind="code", owner="service",
-                                       description="Drive the declared flows mechanically and save identical evidence red or green")) as ph:
-                capture = services.capture(run, decl)
-                ph.log(flows=len(capture.flows), passed=capture.passed,
-                       failures=len(capture.failures))
+        live_decl = services.load_declaration()
+        criteria = [m.criterion for m in extend.mapping]
+        with run.phase(PhaseParams(name=f"coverage_{i}", kind="code", owner="service",
+                                   description="Check the criterion->probe mapping for totality — a hole fails here, before a server ever boots")) as ph:
+            cov_gaps = (services.coverage_gaps(criteria, extend.mapping, live_decl)
+                        if extend.mapping else
+                        ["empty mapping — state the criteria this change must "
+                         "demonstrate and the flows/probes that cover them"])
+            probes = services.select_probes(live_decl, extend.mapping)
+            ph.log(criteria=len(criteria), probes_cited=len(probes),
+                   new_probes=len(extend.new_probes), gaps="; ".join(cov_gaps) or "none")
 
-            with run.phase(PhaseParams(name=f"validate_{i}", kind="agent", owner="validator",
-                                       description="Rule on the captured evidence: does the running app do what was asked")) as ph:
-                verdict = ph.call(AgentCall(output_type=ValidateOutput, prompt=prompt,
-                                            previous=services.as_envelope(capture),
-                                            gates=[gates.artifacts_exist,
-                                                   gates.validation_verdict_consistent]))
-
-            with run.phase(PhaseParams(name=f"teardown_{i}", kind="code", owner="service",
-                                       description="Stop the service children-first and verify its port actually freed")) as ph:
-                torn_down = True
-                ph.log(port_freed=services.stop(run, handle))
-        except RuntimeError as exc:
-            # Provision or capture failed fast. The declaration was proven
-            # when it was set up, so the likely cause is the change under
-            # validation breaking startup or the health endpoint — a finding
-            # for the builder through the same door a validator's fail uses.
+        if cov_gaps:
             feedback = GenericOutput(status="fail",
-                                     summary=f"provision/capture failed: {exc}",
-                                     notes_for_next_agent="Validation could not even run — the proven "
-                                                          f"declaration failed to execute: {exc}. If your change "
-                                                          "altered startup, the port, or the health endpoint, fix that.")
+                                     summary=f"coverage gaps: {len(cov_gaps)}",
+                                     notes_for_next_agent="The proof obligation is not total: "
+                                                          + " | ".join(cov_gaps))
         else:
-            if verdict is not None and verdict.passed:
-                break
-            feedback = verdict
-        finally:
-            if handle is not None and not torn_down:
-                services.stop(run, handle)   # crash and kill paths leave no orphan
+            handle = None
+            torn_down = False
+            verdict = None
+            try:
+                with run.phase(PhaseParams(name=f"provision_{i}", kind="code", owner="service",
+                                           description="Build the shippable artifact and start it, waiting for health with a hard deadline")) as ph:
+                    handle = services.start(run, live_decl.service)
+                    ph.log(pid=handle.process.pid, health_url=live_decl.service.health_url)
+
+                with run.phase(PhaseParams(name=f"capture_{i}", kind="code", owner="service",
+                                           description="Execute the floor plus every cited probe mechanically — the exit codes are the verdict")) as ph:
+                    capture = services.capture(run, live_decl, probes=probes)
+                    ph.log(flows=len(capture.flows), passed=capture.passed,
+                           failures=len(capture.failures))
+
+                with run.phase(PhaseParams(name=f"audit_{i}", kind="agent", owner="validator",
+                                           description="Audit the instrument and the evidence — a veto on dishonest probes or degraded captures, never the proof itself")) as ph:
+                    verdict = ph.call(AgentCall(
+                        output_type=AuditOutput,
+                        prompt=(prompt + "\n\nAcceptance criteria and claimed coverage:\n"
+                                + "\n".join(f"- {m.criterion} -> {', '.join(m.covered_by)}"
+                                            for m in extend.mapping)),
+                        previous=services.as_envelope(capture),
+                        gates=[gates.artifacts_exist,
+                               gates.validation_verdict_consistent]))
+
+                with run.phase(PhaseParams(name=f"teardown_{i}", kind="code", owner="service",
+                                           description="Stop the service children-first and verify its port actually freed")) as ph:
+                    torn_down = True
+                    ph.log(port_freed=services.stop(run, handle))
+            except RuntimeError as exc:
+                # Provision or capture failed fast. The declaration was proven
+                # when it was set up, so the likely cause is the change under
+                # validation breaking the build, startup, or the health
+                # endpoint — a finding for the builder through the same door.
+                feedback = GenericOutput(status="fail",
+                                         summary=f"provision/capture failed: {exc}",
+                                         notes_for_next_agent="Validation could not even run — the proven "
+                                                              f"declaration failed to execute: {exc}. If your change "
+                                                              "broke the build, startup, the port, or the health "
+                                                              "endpoint, fix that.")
+            else:
+                passed = capture.passed and verdict is not None and verdict.passed
+                if passed:
+                    break
+                feedback = (verdict if capture.passed
+                            else services.as_envelope(capture))
+            finally:
+                if handle is not None and not torn_down:
+                    services.stop(run, handle)   # crash and kill paths leave no orphan
 
         if i == MAX_VALIDATION_LOOPS:
             break
 
         with run.phase(PhaseParams(name=f"revise_{i}", kind="agent", owner="builder", retries=1,
-                                   description="Close every blocking finding the validator's evidence named")) as ph:
-            ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + FLOW_BRIEF,
-                              previous=feedback,
-                              gates=[gates.diff_matches_claims]))
+                                   description="Close every finding the exit codes or the audit named")) as ph:
+            previous = ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + BUILD_BRIEF,
+                                         previous=feedback,
+                                         gates=[gates.diff_matches_claims]))
 
-    return run.finish(accepted=verdict is not None and verdict.passed,
-                      reason=f"the validator never passed the app after {MAX_VALIDATION_LOOPS} attempt(s)")
+    return run.finish(accepted=passed,
+                      reason=f"the app never proved its criteria after {MAX_VALIDATION_LOOPS} attempt(s)")
 
 
 if __name__ == "__main__":

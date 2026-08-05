@@ -23,11 +23,15 @@ is enough for a first pass.
 """
 
 import argparse
+import os
+import shutil
+import stat
 import sys
+from pathlib import Path
 
 from adw_modules import agents, gates, git_helper, services, session, utils
-from adw_modules.data_types import (AgentCall, BuildOutput, GenericOutput,
-                                    PhaseParams, ScoutOutput, ValidateOutput)
+from adw_modules.data_types import (AgentCall, AuditOutput, BuildOutput,
+                                    GenericOutput, PhaseParams, ScoutOutput)
 from adw_validate import declaration_gap
 
 REQUIRED_AGENTS = ["scout", "builder", "validator"]
@@ -50,7 +54,7 @@ Change nothing. Engineer's steer, if any, follows.
 
 DECLARE_BRIEF = """Using the scout's findings in the previous envelope, set up this project's validation declaration. Your write access is MECHANICALLY limited to adws/adw_data/validation/ — any change outside it is rolled back and fails the phase. If the app's CURRENT behaviour looks wrong (a bug your probe uncovers), do not fix the app and do not encode the wish: probe reality so the capture is honest, and name the suspected product bug in notes_for_next_agent — the engineer routes it to a `just build-validate` run, where fixing the app is the builder's actual job.
 
-1. Edit adws/adw_data/validation/validation.yaml: the real service command (argv list, never a shell string, bare binary names), a health_url that answers only when genuinely up, a startup_timeout_seconds a cold start fits inside, and set `enabled: true` — this run will prove it before anything is committed.
+1. Edit adws/adw_data/validation/validation.yaml: the real service command (argv list, never a shell string, bare binary names), a health_url that answers only when genuinely up, a startup_timeout_seconds a cold start fits inside, and set `enabled: true` — this run will prove it before anything is committed. Validate the artifact you would SHIP, not the dev server: `prepare` is the production build step (e.g. ["npm","run","build"], with prepare_timeout_seconds it fits inside) and `command` serves that build (e.g. ["npm","run","start"]) — dev mode hides build failures, hydration mismatches, and env-inlining differences, so use it only when the stack genuinely has no prod-mode local serve.
 2. Write one flow per journey worth evidence in adws/adw_data/validation/flows/, replacing or extending the stamped home.sh. Every flow: declared in validation.yaml (undeclared scripts never run and fail the library lint); opening lines carry `# Flow: <name> — <scenario it evidences>`; one journey per flow; MECHANICAL capture only, run with $BASE_URL and $EVIDENCE_DIR set and cwd = $EVIDENCE_DIR; save evidence there; exit non-zero on any checkable failure. agent-browser is the primary instrument (open, snapshot -i, get text @ref, screenshot — ALWAYS pass screenshot an explicit path like "$EVIDENCE_DIR/<name>.png"; its default saves to agent-browser's own tmp dir, not the cwd). A page that renders client-side must be polled until the expected content appears in a snapshot (bounded retries, then fail) — a snapshot raced against a client fetch evidences nothing. curl is the degrade path. Code enriches every screenshot afterwards (OCR sidecar, blank check, baseline drift), so capture, don't analyse. Judgement belongs to the validator, not the flow. Steps several flows share (a login, a seeded record) go in flows/lib/ with a `# Step: <name> — <what it does>` header and are `source`d by flows, never declared as flows themselves.
 3. Do NOT start the server or run the flows yourself — this run provisions, captures, and tears down in code immediately after you report.
 
@@ -63,6 +67,9 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     cfg = agents.load_config(config)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
+    # This chain only commits the proven declaration (paths under adws/), but
+    # the guard hook it installs must also let THIS run's commit phase through.
+    os.environ["SSSF_VALIDATED_CHAIN"] = run.adw_id
 
     with run.phase(PhaseParams(name="request", kind="engineer", owner=run.engineer,
                                description="Capture the engineer's steer for the validation setup")) as ph:
@@ -80,6 +87,7 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                   gates=[gates.diff_matches_claims]))
 
     verdict = None
+    proven = False
     for i in range(1, MAX_SETUP_LOOPS + 1):
         decl = services.load_declaration()
         gap = declaration_gap(decl)
@@ -106,9 +114,9 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                     ph.log(flows=len(capture.flows), passed=capture.passed,
                            failures=len(capture.failures))
 
-                with run.phase(PhaseParams(name=f"validate_{i}", kind="agent", owner="validator",
-                                           description="Rule on the captured evidence: does the running app do what was asked")) as ph:
-                    verdict = ph.call(AgentCall(output_type=ValidateOutput, prompt=prompt,
+                with run.phase(PhaseParams(name=f"audit_{i}", kind="agent", owner="validator",
+                                           description="Audit the new instrument and its evidence — exit codes decide whether the app behaved; this veto catches flows that assert less than their journey means")) as ph:
+                    verdict = ph.call(AgentCall(output_type=AuditOutput, prompt=prompt,
                                                 previous=services.as_envelope(capture),
                                                 gates=[gates.artifacts_exist,
                                                        gates.validation_verdict_consistent]))
@@ -129,9 +137,11 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                          summary=f"provision/capture failed: {exc}",
                                          notes_for_next_agent=f"The declaration could not be executed: {exc}")
             else:
-                if verdict is not None and verdict.passed:
+                if capture.passed and verdict is not None and verdict.passed:
+                    proven = True
                     break
-                feedback = verdict
+                feedback = (verdict if capture.passed
+                            else services.as_envelope(capture))
             finally:
                 if handle is not None and not torn_down:
                     services.stop(run, handle)   # crash and kill paths leave no orphan
@@ -145,7 +155,6 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
                                       previous=feedback, writes=VALIDATION_WRITES,
                                       gates=[gates.diff_matches_claims]))
 
-    proven = verdict is not None and verdict.passed
     if proven:
         with run.phase(PhaseParams(name="commit", kind="code", owner="git",
                                    description="Commit the declaration only now that a green run has proven it")) as ph:
@@ -154,6 +163,22 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
             # pathspec exact, and anything else dirty is the operator's.
             ph.log(sha=git_helper.commit_paths(message, VALIDATION_WRITES),
                    message=message)
+
+        # The moment validation is proven, the guard goes up: from here on,
+        # app-code commits in this repo must come through a validated chain
+        # (simple-sdlc, build-validate) — the hook blocks every other door,
+        # with `git commit --no-verify` as the visible, deliberate override.
+        with run.phase(PhaseParams(name="guard", kind="code", owner="git",
+                                   description="Install the pre-commit guard so app code only ships through a validated chain")) as ph:
+            hook_src = Path(run.repo_root) / "adws" / "hooks" / "pre-commit"
+            hook_dst = Path(run.repo_root) / ".git" / "hooks" / "pre-commit"
+            if hook_src.is_file() and hook_dst.parent.is_dir():
+                shutil.copy2(hook_src, hook_dst)
+                hook_dst.chmod(hook_dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+                ph.log(installed=str(hook_dst), override="git commit --no-verify")
+            else:
+                ph.log(installed="skipped",
+                       reason=f"missing {hook_src} or .git/hooks — install by hand: just guard")
 
     return run.finish(accepted=proven,
                       reason=f"the validation never went green after {MAX_SETUP_LOOPS} attempt(s); "

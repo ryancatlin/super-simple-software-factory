@@ -160,8 +160,10 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
     # What the tree looked like before this agent got its hands on it. Every
     # send in this phase — first prompt, JSON retries, gate corrections — is
-    # measured against this one baseline.
+    # measured against this one baseline. HEAD is pinned beside it: commits
+    # are a code phase's act, and one an agent authors is undone afterwards.
     tree_before = permissions.snapshot(run)
+    head_before = permissions.head_ref(run)
 
     result = send(user_text)
     envelope, attempt = _parse_with_retries(run, phase, call, result, send)
@@ -201,6 +203,16 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     enforce_as = (agent.model_copy(update={"writes": call.writes})
                   if call.writes is not None else agent)
     try:
+        # Commit guard first: soft-resetting a premature commit puts its files
+        # back in the working tree, which is the state the change-set
+        # comparison below expects to be judging.
+        undone = permissions.undo_agent_commits(run, enforce_as, head_before)
+        if undone:
+            run.console.note(f"{agent.name} committed mid-phase — undone, work kept "
+                             f"in tree: {'; '.join(undone)}")
+            run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                         type="log", name="agent_commit_undone",
+                                         payload={"agent": agent.name, "commits": undone}))
         touched = permissions.enforce(run, phase, enforce_as, tree_before)
     except permissions.PermissionBreach as breach:
         run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,

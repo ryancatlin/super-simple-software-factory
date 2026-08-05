@@ -30,9 +30,28 @@ import argparse
 import sys
 
 from adw_modules import agents, gates, services, session, utils
-from adw_modules.data_types import AgentCall, PhaseParams, ValidateOutput
+from adw_modules.data_types import AgentCall, AuditOutput, PhaseParams
 
 REQUIRED_AGENTS = ["validator"]
+
+# The extend phase's brief, shared by every chain that proves a request against
+# the running app. It is the ONE concentrated judgement point in the whole
+# guarantee — translating the request's acceptance criteria into falsifiable
+# probes — so its output is a committed, diffable artifact (probe scripts + a
+# criterion->coverage mapping), audited by a different agent and checked for
+# totality in code. Everything downstream is exit codes.
+EXTEND_BRIEF = """Decide how this run's acceptance criteria will be PROVEN against the running app, and report the mapping. Your write access is MECHANICALLY limited to adws/adw_data/validation/ — you extend the measuring instrument, never the app. Any change outside it is rolled back and fails the phase.
+
+For each acceptance criterion, cheapest first:
+1. The FLOOR already covers it — an existing flow's evidence demonstrates it. Cite that flow's name. (`grep '^# Flow:' adws/adw_data/validation/flows/*.sh` is the catalogue.)
+2. An existing PROBE covers it — cite its name. (`grep '^# Probe:' adws/adw_data/validation/flows/probes/*.sh` is the probe library; reuse beats re-authoring.)
+3. Nothing covers it — WRITE a new probe: a small bash script in adws/adw_data/validation/flows/probes/, declared under `probes:` in validation.yaml (undeclared scripts never run and fail the lint), opening lines `# Probe: <name> — <criterion it discharges>`. Compose from flows/lib/ shared steps where they exist.
+
+Probes carry the same mechanical contract as flows: run with $BASE_URL and $EVIDENCE_DIR set, cwd = $EVIDENCE_DIR; agent-browser is the primary instrument (open, snapshot -i, get text @ref, screenshot — ALWAYS an explicit path like "$EVIDENCE_DIR/<name>.png"; poll client-rendered pages until the expected content appears, bounded retries then fail); curl is the degrade path; save evidence and exit non-zero on any checkable failure. THE EXIT CODE IS THE VERDICT: assert the criterion itself, never less — a probe that opens the page but does not assert the promised behaviour proves nothing and will be failed by the audit.
+
+Report `mapping` with every criterion VERBATIM and `covered_by` naming declared flows/probes; `new_probes` lists any scripts you wrote. Code checks the mapping for totality before the server boots, executes the floor plus every cited probe, and computes the verdict from exit codes. Do NOT start the service or run anything yourself.
+
+"""
 
 
 def declaration_gap(decl) -> str:
@@ -81,9 +100,9 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
             ph.log(flows=len(capture.flows), passed=capture.passed,
                    failures=len(capture.failures))
 
-        with run.phase(PhaseParams(name="validate", kind="agent", owner="validator",
-                                   description="Rule on the captured evidence: does the running app do what was asked")) as ph:
-            verdict = ph.call(AgentCall(output_type=ValidateOutput, prompt=prompt,
+        with run.phase(PhaseParams(name="audit", kind="agent", owner="validator",
+                                   description="Audit the instrument and the evidence — exit codes already decided whether the app behaved; this veto catches dishonest or degraded evidence")) as ph:
+            verdict = ph.call(AgentCall(output_type=AuditOutput, prompt=prompt,
                                         previous=services.as_envelope(capture),
                                         gates=[gates.artifacts_exist,
                                                gates.validation_verdict_consistent]))
@@ -96,8 +115,13 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
         if handle is not None and not torn_down:
             services.stop(run, handle)   # crash and kill paths leave no orphan
 
-    return run.finish(accepted=verdict is not None and verdict.passed,
-                      reason="the evidence did not support a pass")
+    # Exit codes prove; the audit only vetoes. Green here means every flow's
+    # falsifiable statement held against the running app AND the audit found
+    # the evidence honest — never that an agent "felt" the app behaved.
+    return run.finish(accepted=capture.passed and verdict is not None and verdict.passed,
+                      reason=("a declared flow's assertion failed against the running app"
+                              if not capture.passed
+                              else "the audit vetoed: the evidence was dishonest or degraded"))
 
 
 if __name__ == "__main__":

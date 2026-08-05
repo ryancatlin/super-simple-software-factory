@@ -126,6 +126,25 @@ def validation_verdict_consistent(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def criteria_present(envelope: EnvelopeBase, run) -> GateReport:
+    """A plan must state its proof obligations, or 'validated' means nothing.
+
+    Acceptance criteria are the unit the whole downstream guarantee hangs on:
+    the extend phase maps them to probes, code checks the mapping for totality,
+    and exit codes discharge them. A plan with none — or with blank ones —
+    makes every later green vacuous, so it is refused here, at authoring time.
+    Judging whether the criteria are HONEST is the audit's job, not a gate's.
+    """
+    report = GateReport()
+    criteria = [c for c in getattr(envelope, "acceptance_criteria", []) if c.strip()]
+    report.check("acceptance_criteria", bool(criteria),
+                 f"{len(criteria)} criteria stated" if criteria
+                 else "none stated — list the user-observable, falsifiable statements "
+                      "the running app must demonstrate (work with nothing user-visible "
+                      "states: 'no observable change to any declared journey')")
+    return report
+
+
 def tests_pass(command: str):
     """Gate factory: the given shell command must exit 0."""
     def gate(envelope: EnvelopeBase, run) -> GateReport:
