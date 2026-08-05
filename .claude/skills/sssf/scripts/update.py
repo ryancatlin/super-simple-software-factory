@@ -229,11 +229,23 @@ def update_tree(skill: Path, root: Path, manifest: dict, dry: bool,
         report["kept"].append(".claude/skills/sssf (symlink — not refreshed;"
                               " point it at a real copy and re-run)")
     elif skill_dest.is_dir():
-        _refresh_skill(skill, skill_dest, files, report, dry)
+        _refresh_skill(skill, skill_dest, ".claude/skills/sssf",
+                       files, report, dry)
     else:
         if not dry:
             skill_dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(skill, skill_dest)
+            shutil.copytree(skill, skill_dest,
+                            ignore=shutil.ignore_patterns("__pycache__",
+                                                          "node_modules",
+                                                          "dist"))
+            # record every copied file's hash so future updates can diff them
+            for p in skill_dest.rglob("*"):
+                if p.is_file() and p.name not in ("__pycache__",):
+                    try:
+                        rel = f".claude/skills/sssf/{p.relative_to(skill_dest)}"
+                    except ValueError:
+                        continue
+                    files[rel] = sha256(p)
         report["added"].append(".claude/skills/sssf/ (full skill copy)")
 
     # Files recorded but no longer shipped: left in place, reported.
@@ -253,18 +265,24 @@ def update_tree(skill: Path, root: Path, manifest: dict, dry: bool,
         report["orphaned"].append(rel)
 
 
-def _refresh_skill(src_dir: Path, dest_dir: Path, files: dict, report: dict,
-                   dry: bool) -> None:
-    """Force-refresh the skill copy: the skill is the machine, not user-owned."""
+def _refresh_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
+                   files: dict, report: dict, dry: bool) -> None:
+    """Force-refresh the skill copy: the skill is the machine, not user-owned.
+
+    rel_prefix carries the FULL path from the skill root (e.g.
+    ".claude/skills/sssf/apps/visualizer/server/db.ts") so manifest keys stay
+    unique — a bare basename would collide across nested dirs (system.md
+    exists in every agent's prompt_engineering/).
+    """
     for child in sorted(src_dir.iterdir()):
-        if child.name == "__pycache__":
+        if child.name in ("__pycache__", "node_modules", "dist"):
             continue
-        rel = f".claude/skills/sssf/{child.name}"
+        rel = f"{rel_prefix}/{child.name}"
         dest = dest_dir / child.name
         if child.is_dir():
             if not dry:
                 dest.mkdir(parents=True, exist_ok=True)
-            _refresh_skill(child, dest, files, report, dry)
+            _refresh_skill(child, dest, rel, files, report, dry)
         else:
             if not dry:
                 dest.parent.mkdir(parents=True, exist_ok=True)
@@ -278,6 +296,8 @@ def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
     entries = [
         "adws/adw_data/sessions/", "adws/adw_data/sssf.db*", ".env",
         "__pycache__/", "*.pyc",
+        ".claude/skills/sssf/apps/visualizer/node_modules/",
+        ".claude/skills/sssf/apps/visualizer/dist/",
     ]
     existing = gitignore.read_text().splitlines() if gitignore.exists() else []
     missing = [e for e in entries if e not in existing]
@@ -286,6 +306,40 @@ def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
             f.write("\n# sssf runtime\n" + "\n".join(missing) + "\n")
     if missing:
         report["refreshed"].append(f".gitignore (+{len(missing)} entries)")
+
+
+PI_SETTINGS = ".pi/settings.json"
+
+
+def ensure_pi_settings(root: Path, report: dict, dry: bool) -> None:
+    """Wire pi to the project's Claude Code skills (.pi/settings.json).
+
+    Merges, never clobbers: an existing file keeps its keys, and the
+    "skills" array gains the project skill dir if it is not already there.
+    """
+    path = root / PI_SETTINGS
+    desired = "../.claude/skills"
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict):
+                data = {}
+        except json.JSONDecodeError:
+            data = {}
+        skills = data.get("skills")
+        if isinstance(skills, list) and desired in skills:
+            report["kept"].append(f"{PI_SETTINGS} (pi already wired)")
+            return
+        if not isinstance(skills, list):
+            skills = []
+        skills.append(desired)
+        data["skills"] = skills
+    else:
+        data = {"skills": [desired]}
+    if not dry:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2) + "\n")
+    report["refreshed"].append(f"{PI_SETTINGS} (pi -> {desired})")
 
 
 def main() -> int:
@@ -318,6 +372,7 @@ def main() -> int:
                               "branch": args.branch or DEFAULT_BRANCH}
         save_manifest(root, manifest)
         ensure_gitignore(root, report, False)
+        ensure_pi_settings(root, report, False)
     else:
         update_tree(skill, root, manifest, True, report)
 

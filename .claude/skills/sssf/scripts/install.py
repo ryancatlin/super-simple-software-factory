@@ -37,6 +37,10 @@ GITIGNORE_ENTRIES = [
     # first repo that was ever installed into from scratch.
     "__pycache__/",
     "*.pyc",
+    # `just obs` bun-installs the visualizer; node_modules/dist are build
+    # artifacts, never part of the stamped factory.
+    ".claude/skills/sssf/apps/visualizer/node_modules/",
+    ".claude/skills/sssf/apps/visualizer/dist/",
 ]
 
 
@@ -80,6 +84,39 @@ def ensure_gitignore(root: Path, stamped: list) -> None:
         stamped.append(f"{gitignore} (+{len(missing)} entries)")
 
 
+PI_SETTINGS = ".pi/settings.json"
+
+
+def ensure_pi_settings(root: Path, stamped: list, skipped: list) -> None:
+    """Wire pi to the project's Claude Code skills (.pi/settings.json).
+
+    Merges, never clobbers: an existing file keeps its keys, and the
+    "skills" array gains the project skill dir if it is not already there.
+    """
+    path = root / PI_SETTINGS
+    desired = "../.claude/skills"
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict):
+                data = {}
+        except json.JSONDecodeError:
+            data = {}
+        skills = data.get("skills")
+        if isinstance(skills, list) and desired in skills:
+            skipped.append(f"{PI_SETTINGS} (pi already wired)")
+            return
+        if not isinstance(skills, list):
+            skills = []
+        skills.append(desired)
+        data["skills"] = skills
+    else:
+        data = {"skills": [desired]}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    stamped.append(f"{PI_SETTINGS} (pi -> {desired})")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
@@ -108,6 +145,7 @@ def main() -> int:
     stamp(TEMPLATES / "justfile", root / "justfile", args.force, stamped,
           skipped, manifest_files)
     ensure_gitignore(root, stamped)
+    ensure_pi_settings(root, stamped, skipped)
 
     # The stamp manifest records what was stamped and the template hash of
     # each file, so update.py can refresh unmodified files and keep local
