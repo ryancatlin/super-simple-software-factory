@@ -12,3 +12,4 @@ Implement the plan (or request) exactly; report every file you changed.
 - When fixing test failures, address every reported failure.
 - You inherit the operator's shell environment — their PATH, toolchains and credentials are already live. Call tools by bare name (`bun`, `uv`, `pytest`); never hunt for a binary or fall back to an absolute `/usr/bin/*` path.
 - Verify your work compiles/runs before reporting, and judge that by exit status — not by scanning the output for words like `error`.
+- Verify NARROWLY: the test or lint your change touches is fine; never pre-flight the pipeline. Do not start dev servers, install browsers (`playwright install`), or run validation flows yourself — code phases provision and run every one of those the moment you report, and a server or download you start only stalls the run.

@@ -39,6 +39,34 @@ def alive(pid: int) -> bool:
         return False
 
 
+def reconcile(db: Path, adw_id: str) -> None:
+    """Close the books on a run whose processes are gone.
+
+    A SIGKILLed or crashed ADW never reaches its own finalizer, so its session
+    row reads 'running' forever. Once every recorded pid is verified dead,
+    finalize on its behalf: session failed, open phases failed, process rows
+    closed. (session.ensure sweeps these too — this covers the explicit kill.)
+    """
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+    conn = sqlite3.connect(db)
+    try:
+        changed = conn.execute(
+            "UPDATE sessions SET status='fail', ended_at=?"
+            " WHERE adw_id=? AND status='running'", (ts, adw_id)).rowcount
+        conn.execute(
+            "UPDATE phases SET status='fail', ended_at=?,"
+            " error='process died without finalizing (hard kill or crash)'"
+            " WHERE adw_id=? AND status='running'", (ts, adw_id))
+        conn.execute(
+            "UPDATE processes SET ended_at=? WHERE adw_id=? AND ended_at IS NULL",
+            (ts, adw_id))
+        conn.commit()
+        if changed:
+            print(f"finalized {adw_id}: session marked fail, trace closed")
+    finally:
+        conn.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="ADW Kill — stop a run: agent children first, then the workflow")
@@ -63,6 +91,7 @@ def main() -> int:
     ).fetchall()
     if not rows:
         print(f"no live processes recorded for {args.adw_id}")
+        reconcile(db, args.adw_id)       # a dead run may still read 'running'
         return 0
 
     targets = []
@@ -96,6 +125,13 @@ def main() -> int:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+    # SIGTERM lets the ADW finalize its own trace; SIGKILL (and pids that were
+    # already gone) cannot. Once nothing recorded is alive, close the books —
+    # idempotent, so a self-finalized run is left exactly as it wrote itself.
+    time.sleep(0.5)
+    if not any(alive(pid) for _, _, pid, _ in rows):
+        reconcile(db, args.adw_id)
     return 0
 
 
