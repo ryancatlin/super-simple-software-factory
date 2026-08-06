@@ -18,7 +18,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { Container, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-const { spawn } = require("child_process") as any;
+import { spawn, type ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -44,7 +44,7 @@ interface SubState {
 	turnCount: number;     // increments each time /subcont continues this agent
 	model: string;
 	thinking: ThinkingLevel;
-	proc?: any;            // active ChildProcess ref (for kill on /subrm)
+	proc?: ChildProcess;   // active process ref (for kill on /subrm)
 }
 
 interface ParsedCommand {
@@ -112,10 +112,24 @@ function parseCommandOptions(input: string): ParsedCommand {
 	return { options, rest: rest.trim() };
 }
 
-export default function (pi: ExtensionAPI) {
+// pi's extension surface types its command/tool contexts loosely; the pieces
+// this widget touches are typed here instead of reaching for `any`.
+interface WidgetCtx {
+	ui: {
+		setWidget: (key: string, widget: unknown) => void;
+		notify: (message: string, level: string) => void;
+	};
+	model?: { provider?: string; id?: string };
+}
+
+interface WidgetTheme {
+	fg: (color: string, s: string) => string;
+}
+
+export default function subagentWidget(pi: ExtensionAPI) {
 	const agents: Map<number, SubState> = new Map();
 	let nextId = 1;
-	let widgetCtx: any;
+	let widgetCtx: WidgetCtx | undefined;
 
 	// ── Session file helpers ──────────────────────────────────────────────────
 
@@ -132,7 +146,7 @@ export default function (pi: ExtensionAPI) {
 
 		for (const [id, state] of Array.from(agents.entries())) {
 			const key = `sub-${id}`;
-			widgetCtx.ui.setWidget(key, (_tui: any, theme: any) => {
+			widgetCtx.ui.setWidget(key, (_tui: unknown, theme: WidgetTheme) => {
 				const container = new Container();
 				const borderFn = (s: string) => theme.fg("dim", s);
 
@@ -210,7 +224,7 @@ export default function (pi: ExtensionAPI) {
 	function spawnAgent(
 		state: SubState,
 		prompt: string,
-		ctx: any,
+		ctx: WidgetCtx,
 		options: SpawnOptions = {},
 	): Promise<void> {
 		const parentProvider = ctx.model?.provider?.trim();

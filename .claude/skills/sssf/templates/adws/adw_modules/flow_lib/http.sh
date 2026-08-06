@@ -20,12 +20,16 @@ _flow_lib_evidence_path() {
   esac
 }
 
-# Step: fetch_expect — GET a URL and assert its status, body, content and deadline.
+# Step: fetch_expect — request a URL and assert its status, body, content and deadline.
 #
-#   fetch_expect <url> <outfile> <expected_code> [max_seconds] [required_string ...]
+#   fetch_expect [-X <method>] [-d <data>] [-A <user_agent>] [-H <header>]... \
+#                <url> <outfile> <expected_code> [max_seconds] [required_string ...]
 #
-# Saves the body to $EVIDENCE_DIR/<outfile> and a one-line summary to
-# $EVIDENCE_DIR/<outfile>.status, then asserts, in order:
+# Options come first, positionals after — a plain GET needs no flags. -d sends
+# a request body (POST unless -X says otherwise); -A and -H shape the request's
+# identity, which is how a bot-gate or API flow probes different clients
+# without hand-rolling curl. Saves the body to $EVIDENCE_DIR/<outfile> and a
+# one-line summary to $EVIDENCE_DIR/<outfile>.status, then asserts, in order:
 #   - curl completed at all (DNS, connection, TLS),
 #   - the status code is EXACTLY <expected_code>,
 #   - the body is non-empty (a 200 serving nothing is not a working page),
@@ -37,8 +41,29 @@ _flow_lib_evidence_path() {
 # naive numeric comparison silently misreads it. Belt and braces, because this
 # bug ships green.
 fetch_expect() {
+  local -a request=()
+  local method="" sent_data=no
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -X) method=$2; shift 2 ;;
+      -d) request+=(--data "$2"); sent_data=yes; shift 2 ;;
+      -A) request+=(-A "$2"); shift 2 ;;
+      -H) request+=(-H "$2"); shift 2 ;;
+      -*) echo "fetch_expect: unknown option $1 (options go before the url)" >&2
+          return 2 ;;
+      *)  break ;;
+    esac
+  done
+  if [ -n "$method" ]; then
+    request+=(-X "$method")
+  fi
+  # The label used in every status line and failure message.
+  local verb=${method:-GET}
+  if [ "$sent_data" = yes ] && [ -z "$method" ]; then
+    verb=POST
+  fi
   if [ "$#" -lt 3 ]; then
-    echo "fetch_expect: usage: fetch_expect <url> <outfile> <expected_code> [max_seconds] [required_string ...]" >&2
+    echo "fetch_expect: usage: fetch_expect [-X method] [-d data] [-A user_agent] [-H header]... <url> <outfile> <expected_code> [max_seconds] [required_string ...]" >&2
     return 2
   fi
   local url=$1 outfile=$2 expected=$3
@@ -67,17 +92,17 @@ fetch_expect() {
     limits+=(--max-time "$max_seconds")
   fi
   set +e
-  metrics=$(LC_ALL=C curl -sS "${limits[@]}" -o "$body" \
+  metrics=$(LC_ALL=C curl -sS "${limits[@]}" ${request[@]+"${request[@]}"} -o "$body" \
               -w '%{http_code} %{time_total}' "$url" 2>"$body.curl.err")
   curl_status=$?
   if [ "$errexit" = on ]; then set -e; fi
 
   if [ "$curl_status" -ne 0 ]; then
-    echo "GET $url -> curl exited $curl_status (no response)" > "$status_file"
+    echo "$verb $url -> curl exited $curl_status (no response)" > "$status_file"
     if [ "$curl_status" -eq 28 ]; then
-      echo "fetch_expect: FAILED — GET $url did not complete within the ${max_seconds}s deadline" >&2
+      echo "fetch_expect: FAILED — $verb $url did not complete within the ${max_seconds}s deadline" >&2
     else
-      echo "fetch_expect: FAILED — curl could not complete GET $url (exit $curl_status)" >&2
+      echo "fetch_expect: FAILED — curl could not complete $verb $url (exit $curl_status)" >&2
     fi
     sed 's/^/  /' "$body.curl.err" >&2 2>/dev/null || true
     return 1
@@ -86,22 +111,22 @@ fetch_expect() {
   code=${metrics%% *}
   elapsed=${metrics##* }
   elapsed=${elapsed//,/.}          # comma locale slipped through: normalise
-  echo "GET $url -> $code in ${elapsed}s" > "$status_file"
+  echo "$verb $url -> $code in ${elapsed}s" > "$status_file"
 
   if [ "$code" != "$expected" ]; then
-    echo "fetch_expect: FAILED — GET $url returned $code, expected $expected" >&2
+    echo "fetch_expect: FAILED — $verb $url returned $code, expected $expected" >&2
     return 1
   fi
 
   if [ ! -s "$body" ]; then
-    echo "fetch_expect: FAILED — GET $url returned $code with an EMPTY body; a status code alone proves nothing about the page" >&2
+    echo "fetch_expect: FAILED — $verb $url returned $code with an EMPTY body; a status code alone proves nothing about the page" >&2
     return 1
   fi
 
   local needle
   for needle in "$@"; do
     if ! grep -qF -- "$needle" "$body"; then
-      echo "fetch_expect: FAILED — GET $url ($code) does not contain the required string: $needle" >&2
+      echo "fetch_expect: FAILED — $verb $url ($code) does not contain the required string: $needle" >&2
       echo "  body saved at $body — check whether the feature rendered at all" >&2
       return 1
     fi
@@ -109,11 +134,11 @@ fetch_expect() {
 
   if [ "$max_seconds" != "0" ]; then
     if ! LC_ALL=C awk -v t="$elapsed" -v m="$max_seconds" 'BEGIN { exit !(t <= m) }'; then
-      echo "fetch_expect: FAILED — GET $url took ${elapsed}s, over the ${max_seconds}s deadline" >&2
+      echo "fetch_expect: FAILED — $verb $url took ${elapsed}s, over the ${max_seconds}s deadline" >&2
       return 1
     fi
   fi
 
   rm -f "$body.curl.err"
-  echo "fetch_expect: ok — GET $url -> $code in ${elapsed}s, $# required string(s) matched"
+  echo "fetch_expect: ok — $verb $url -> $code in ${elapsed}s, $# required string(s) matched"
 }
