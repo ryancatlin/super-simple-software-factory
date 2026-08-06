@@ -39,7 +39,8 @@ import argparse
 import os
 import sys
 
-from adw_modules import agents, gates, git_helper, services, session, utils
+from adw_modules import (agents, gates, git_helper, permissions, services,
+                         session, utils)
 from adw_modules.data_types import (AgentCall, AuditOutput, BuildOutput,
                                     ExtendOutput, GenericOutput, PhaseParams)
 from adw_validate import EXTEND_BRIEF, declaration_gap
@@ -74,6 +75,13 @@ BV_CRITERIA_NOTE = ("No plan precedes you: derive the acceptance criteria from t
 
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
     cfg = agents.load_config(config)
+    # Judged as the BUILDER because the builder is who would have to write it:
+    # a request naming machinery it may never touch is lost before it starts.
+    refusal = permissions.barred_request_refusal(
+        prompt, agents.resolve(cfg, "builder"), cfg)
+    if refusal:
+        print(refusal, file=sys.stderr)      # before any session exists to record
+        return 2
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
     # A validated chain — its one commit runs only after a green verdict, so

@@ -191,6 +191,45 @@ def permitted(path: str, agent: AgentConfig, cfg: SSSFConfig) -> bool:
     return agent.writes is None          # None = unrestricted, [] = no repo writes
 
 
+def barred_request_refusal(text: str, agent: AgentConfig, cfg: SSSFConfig) -> str:
+    """The refusal to print when a request names paths `agent` may never write,
+    else "".
+
+    A request aimed at factory machinery loses at the build wall — after
+    minutes of planning and a committed spec, observed live as a rolled-back
+    edit to the very quality module the run was asked to improve. The loss is
+    knowable before a session exists: any path the request names verbatim that
+    the building agent is not permitted to write is a task the chain cannot
+    win, so it refuses up front. Verbatim mentions only — an obliquely phrased
+    request still hits the build wall, which remains the enforcement layer;
+    this is the early exit, not the guarantee. A project that unlocks a path
+    through the agent's `writes` is, by the same `permitted()` call the wall
+    uses, not refused.
+    """
+    barred, seen = [], set()
+    for raw in re.findall(r"[\w.\-*/]+", text):
+        token = raw.strip(".,")
+        if "/" not in token.strip("/") or token in seen:
+            continue
+        seen.add(token)
+        # A directory named without its trailing slash must still count, so
+        # both spellings are asked; either being barred bars the token.
+        if not (permitted(token, agent, cfg)
+                and permitted(token.rstrip("/") + "/", agent, cfg)):
+            barred.append(token)
+    if not barred:
+        return ""
+    listed = "\n".join(f"  - {p}" for p in barred)
+    return (f"refusing to start: the request names {len(barred)} path(s) the "
+            f"{agent.name} may never write\n{listed}\n\n"
+            "These are factory machinery (defaults.protected_files). The chain "
+            "would plan, commit a spec, and then roll the build back at the "
+            "permission wall — a guaranteed loss, refused before it is paid for.\n"
+            "Machinery is fixed in the FACTORY repo and inherited here:\n"
+            "  1. make the change in super-simple-software-factory and push it\n"
+            "  2. run `just update` in this project")
+
+
 def _roll_back(run, path: str, before: dict[str, str], after: dict[str, str]) -> str:
     """Undo one unauthorized change. Returns a word describing what happened.
 
