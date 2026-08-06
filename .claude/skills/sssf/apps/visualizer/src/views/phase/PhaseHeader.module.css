@@ -33,6 +33,27 @@
   margin-left: auto;
 }
 
+/* The repro-bundle action. Two classes, so the restamp lands whatever order the
+   CSS modules end up in the bundle. Quiet by default — it is an escape hatch to
+   a debugging session, not the panel's headline. CopyPlate's own type is mono
+   because it is drawn for shell commands; this is an action label, and §2.2
+   keeps mono out of the UI voice, so it is restamped like the tags beside it. */
+.head .bundle {
+  flex: none;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-stamp);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-stamp);
+  color: var(--text-dim);
+}
+
+.head .bundle:hover {
+  color: var(--text-hi);
+}
+
 .close {
   display: inline-flex;
   align-items: center;

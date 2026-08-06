@@ -1,5 +1,6 @@
+import { Crosshair } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { PollHealth, TraceSnapshot } from '@/App'
 import { cx } from '@/components/cx'
 import { EmptyState } from '@/components/EmptyState'
@@ -10,17 +11,21 @@ import { Stamp } from '@/components/Stamp'
 import { STAT_TITLES } from '@/components/StatChip'
 import { StatusChip } from '@/components/StatusChip'
 import { useFirstPaint } from '@/hooks/useFirstPaint'
+import { useFollowMode } from '@/hooks/useFollowMode'
 import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useNow } from '@/hooks/useNow'
 import { useSessionTrace } from '@/hooks/useSessionTrace'
-import { fmtCost, fmtDate, fmtDuration, fmtTokens, payloadOk, ts } from '@/lib/format'
+import { eventLabel } from '@/lib/events'
+import { fmtCost, fmtDate, fmtDuration, fmtOffset, fmtTokens, payloadOk, ts } from '@/lib/format'
 import type { Phase } from '@/lib/types'
 import { navigate } from '@/router'
+import { eventTypeVar } from '@/theme/palette'
 import { PhaseDetail } from '@/views/phase/PhaseDetail'
 import { buildLanes } from './lanes'
 import { QueueGutter } from './QueueGutter'
 import { TimeAxis } from './TimeAxis'
 import { TraceLane } from './TraceLane'
+import { TriagePanel } from './TriagePanel'
 import { buildTimeScale } from './timeScale'
 import s from './SessionTrace.module.css'
 
@@ -101,7 +106,10 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
    * lands) is never observed. A React 19 cleanup ref measures on attach instead.
    */
   const [trackPx, setTrackPx] = useState(0)
+  /** The same element, kept for follow mode's pin geometry. */
+  const trackElRef = useRef<HTMLDivElement | null>(null)
   const measureTrack = useCallback((el: HTMLDivElement | null) => {
+    trackElRef.current = el
     if (!el) return
     setTrackPx(el.getBoundingClientRect().width)
     const ro = new ResizeObserver((entries) => {
@@ -109,8 +117,35 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
       if (entry) setTrackPx(entry.contentRect.width)
     })
     ro.observe(el)
-    return () => ro.disconnect()
+    return () => {
+      ro.disconnect()
+      trackElRef.current = null
+    }
   }, [])
+
+  // ── follow mode ────────────────────────────────────────────────────────────
+
+  /** Real, non-elided milliseconds on the axis — what live density is sold by. */
+  const liveMs = useMemo(
+    () => scale.segments.reduce((sum, seg) => sum + Math.max(seg.t1 - seg.t0, 0), 0),
+    [scale],
+  )
+
+  const nowPct = scale.x(nowMs)
+
+  const follow = useFollowMode({
+    adwId,
+    running,
+    nowPct,
+    liveMs,
+    tick: nowMs,
+    trackRef: trackElRef,
+  })
+
+  const { toggle: toggleFollow } = follow
+
+  /** The run's newest event, for the header readout. */
+  const latest = events.at(-1) ?? null
 
   // ── selection ──────────────────────────────────────────────────────────────
 
@@ -167,6 +202,36 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
 
   const { setSelectedId } = nav
 
+  /**
+   * F belongs to the view, not to the lane cursor, so it is layered over the
+   * list driver's handler rather than pushed into it.
+   */
+  const containerProps = useMemo(() => {
+    const { onKeyDown, ...rest } = nav.containerProps
+    return {
+      ...rest,
+      onKeyDown: (e: ReactKeyboardEvent) => {
+        const typing =
+          e.target instanceof HTMLElement &&
+          (e.target.tagName === 'INPUT' ||
+            e.target.tagName === 'TEXTAREA' ||
+            e.target.isContentEditable)
+        if (
+          (e.key === 'f' || e.key === 'F') &&
+          !typing &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey
+        ) {
+          e.preventDefault()
+          toggleFollow()
+          return
+        }
+        onKeyDown(e)
+      },
+    }
+  }, [nav.containerProps, toggleFollow])
+
   // A deep link arrives with a phase already chosen: put the keyboard cursor
   // (and the lane focus) where the URL says the user is.
   useEffect(() => {
@@ -196,13 +261,69 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
   const reveal = useFirstPaint(loaded && phases.length > 0)
 
   return (
-    <div className={s.trace} {...nav.containerProps}>
+    <div className={s.trace} {...containerProps}>
       {error ? (
         <ErrorBar message={error} attempts={attempts} lastOkAgeMs={null} sticky />
       ) : null}
 
+      {/*
+        Triage leads. When a run has broken, reconstructing the story by
+        clicking through phases is the work this plate exists to delete — so it
+        sits above the spec plate, and renders nothing at all otherwise.
+      */}
+      <TriagePanel
+        adwId={adwId}
+        session={session}
+        phases={phases}
+        lanes={lanes}
+        events={events}
+        envelopes={envelopes}
+        gates={gates}
+      />
+
       {session ? (
         <section className={cx('plate', s.spec)}>
+          {/*
+            Follow is chrome for a live run only: it arms a different geometry
+            (live density + a lead in front of NOW), so offering it on a run
+            that has stopped moving would be offering a switch with no wire.
+          */}
+          {running ? (
+            <div className={s.followBar}>
+              <button
+                type="button"
+                className={cx('stamp', s.followBtn, follow.armed && s.followOn)}
+                aria-pressed={follow.armed}
+                title="Follow the run — pins the NOW line at 70% of the track (F)"
+                onClick={toggleFollow}
+              >
+                <Crosshair size={13} strokeWidth={2} aria-hidden="true" />
+                follow
+              </button>
+
+              {follow.suspended ? (
+                <Stamp tone="amber" className={s.paused}>
+                  paused — scroll back or press F
+                </Stamp>
+              ) : null}
+
+              {latest ? (
+                <span className={s.live} title={eventLabel(latest)}>
+                  <span
+                    className={cx('stamp', s.liveType)}
+                    style={{ color: eventTypeVar(latest.type) }}
+                  >
+                    {latest.type ?? 'event'}
+                  </span>
+                  <span className={s.liveLabel}>{eventLabel(latest)}</span>
+                  <span className={cx(s.liveAge, 'tnum')}>
+                    {fmtOffset(Math.max(nowMs - ts(latest.started_at), 0))} ago
+                  </span>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
           <h1 className={s.request} title={session.request ?? ''}>
             {session.request ?? '—'}
           </h1>
@@ -233,8 +354,12 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
       {phases.length > 0 ? (
         <>
           <div
-            className={cx('plate', s.waterfall)}
-            style={{ gridTemplateRows: `repeat(${lanes.length + 1}, auto)` }}
+            className={cx('plate', s.waterfall, follow.armed && s.following)}
+            ref={follow.scrollerRef}
+            style={{
+              gridTemplateRows: `repeat(${lanes.length + 1}, auto)`,
+              ...follow.vars,
+            }}
           >
             <div className={s.axisRail} style={{ gridColumn: 1, gridRow: 1 }}>
               <span className={cx('stamp', s.axisStamp)}>lane</span>
@@ -262,10 +387,21 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
                 cursorPhaseId={lane.id === nav.selectedId ? cursorPhaseId : null}
                 reveal={reveal}
                 itemProps={nav.itemProps(lane.id)}
+                follow={follow.armed}
               />
             ))}
 
             <QueueGutter lanes={lanes} selectedPhaseId={phaseId} onSelect={select} />
+
+            {/* The lead: empty track in front of NOW, so the pin has room to
+                hold it at 70% instead of against the right edge. */}
+            {follow.armed ? (
+              <div
+                className={s.lead}
+                style={{ gridColumn: 4, gridRow: '1 / -1' } as CSSProperties}
+                aria-hidden="true"
+              />
+            ) : null}
 
             {running ? (
               <div
@@ -286,7 +422,9 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
             and nothing else on screen says so.
           */}
           <div className={s.foot}>
-            <Stamp>j k lane · ← → phase · enter open · esc back</Stamp>
+            <Stamp>
+              j k lane · ← → phase · enter open · esc back{running ? ' · f follow' : ''}
+            </Stamp>
             <Stamp className={s.footRight}>
               {lanes.length} lanes · {phases.length} phases
             </Stamp>
@@ -305,6 +443,7 @@ export function SessionTrace({ adwId, phaseId, onSnapshot, onPollHealth }: Sessi
       {selected ? (
         <PhaseDetail
           phase={selected}
+          session={session}
           events={events}
           envelopes={envelopes}
           gates={gates}

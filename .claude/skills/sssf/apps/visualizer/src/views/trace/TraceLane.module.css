@@ -1,11 +1,18 @@
 /* One swim lane: the rail plate on the left, the time track on the right. */
 
+/* Sticky so the lane keeps its name while follow mode runs the track under it.
+   Opaque for the same reason — surface-1 is the plate it already sat on, so
+   nothing changes when there is nothing to scroll. */
 .rail {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-sticky);
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
   padding: var(--sp-5) var(--sp-6);
+  background: var(--surface-1);
   border-right: 1px solid var(--edge);
   border-bottom: 1px solid var(--edge-soft);
   overflow: hidden;
@@ -130,6 +137,23 @@
     var(--tex-dots-size);
   border-left: 1px solid var(--edge-strong);
   border-right: 1px solid var(--edge-strong);
+}
+
+/* Follow mode's active mark: an amber rule milled under the block the run is
+   currently inside. The block already carries the running hatch; this says
+   which one the pin is tracking. Flat, 2px, no glow. */
+.activeRule {
+  position: absolute;
+  top: 62px;
+  height: 2px;
+  min-width: 6px;
+  background: var(--amber);
+  border-radius: var(--r-1);
+  pointer-events: none;
+  z-index: var(--z-block);
+  transition:
+    left var(--dur-3) var(--ease-out-quart),
+    width var(--dur-3) var(--ease-out-quart);
 }
 
 /* The name of a block too narrow to hold it, anchored to the block's own

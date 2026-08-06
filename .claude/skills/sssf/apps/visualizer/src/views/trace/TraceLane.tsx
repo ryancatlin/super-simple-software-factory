@@ -32,6 +32,8 @@ export interface TraceLaneProps {
   reveal: boolean
   /** Additive: data-selected + scroll ref from useListKeyboardNav. */
   itemProps: { 'data-selected'?: true; ref: (el: HTMLElement | null) => void }
+  /** Additive: follow mode is armed — mark the block the run is inside. */
+  follow?: boolean
 }
 
 const KIND_ICONS: Record<PhaseKind, LucideIcon> = {
@@ -66,6 +68,7 @@ export function TraceLane({
   cursorPhaseId,
   reveal,
   itemProps,
+  follow,
 }: TraceLaneProps) {
   const Icon = KIND_ICONS[lane.kind]
   const ctx = lane.context
@@ -170,6 +173,19 @@ export function TraceLane({
             cursor={phase.phase_id === cursorPhaseId}
           />
         ))}
+
+        {follow
+          ? placed
+              .filter((entry) => entry.phase.status === 'running')
+              .map((entry) => (
+                <span
+                  key={entry.phase.phase_id}
+                  className={s.activeRule}
+                  style={{ left: `${entry.geom.left}%`, width: `${entry.geom.width}%` }}
+                  aria-hidden="true"
+                />
+              ))
+          : null}
 
         {floating.map((entry) => (
           <span key={entry.phase.phase_id} className={s.floatLabel} style={entry.style}>

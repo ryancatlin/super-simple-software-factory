@@ -615,6 +615,10 @@ collapses to `0` and queued phases move to a strip below the waterfall.
 Each row (axis row + one row per lane) is a subgrid sharing those columns. Column boundaries are 1px
 `--edge` rules that run the full height of the waterfall.
 
+> This is the **resting** geometry, and it is what the waterfall looks like unless follow mode is
+> armed. Following swaps in a fourth column and a horizontal viewport so the NOW line can be pinned
+> at 70% — see §6.5.1, which states this grid in the custom properties both cases share.
+
 **Time mapping — real, with elided idle.** This is the core upgrade over the Vue version, which
 faked positions by shifting blocks right. Blocks now sit at their true time; dead air is cut out
 explicitly and *labelled*, so nothing lies.
@@ -965,6 +969,7 @@ container with `tabIndex={-1}`, so the keys work without a click as long as focu
 | `Enter` | open the run | open the selected phase's detail | expand/collapse the event |
 | `Esc` | clear selection | if a phase is selected → `navigate(adwId)`; else → `navigate()` (back to sessions) | close the detail |
 | `g g` / `G` | first / last row | first / last lane | first / last event |
+| `f` | — | follow the run — arm / resume / disarm (§6.5) | — |
 | `/` | focus… *(reserved, not implemented)* | | |
 
 Rules: keys are ignored when the event target is an `<input>`/`<textarea>`, or when a modifier other
@@ -984,6 +989,331 @@ for rendering. Rules:
 - Every ticking number uses `.tnum` and a fixed-width format so digits do not jitter.
 - `useNow` uses one `setInterval` per subscriber, cleared on unmount; it must never `setState` after
   unmount.
+
+### 6.4 Failure triage & the repro bundle
+
+When a run breaks, the engineer reconstructs the story by clicking phases until they find the red
+one, then opens four sections to learn why, then retypes all of it into a debugging session. Both
+halves of that are deleted here: a plate that **leads with the failure**, and one button that puts
+the whole story on the clipboard as markdown.
+
+Owned by the trace builder (view B). Two new files in `views/trace/` — `TriagePanel.tsx` +
+`.module.css`, and `reproBundle.ts`.
+
+**One sanctioned cross-view edge.** `reproBundle.ts` is the shared bundle builder and both views use
+it: `views/trace/TriagePanel` and `views/phase/PhaseHeader`. It reads its derivations from
+`views/phase/phaseData` (`phaseEventsOf`, `phaseGatesOf`, `phaseOutputsOf`, `gateChecksOf`,
+`violationsOf`, `eventDurationMs`) rather than reimplementing them, and re-exports
+`phaseFailureEvents` / `phaseReportExcerpt` so the panel never has to reach into `views/phase`
+itself. This widens §7.1's "views must never import from another view's directory" by exactly one
+module, declared here so it is not an accident. There is no cycle: `phaseData` imports only `lib/`.
+
+#### 6.4.1 When the plate appears
+
+The panel renders **above the spec plate** in `SessionTrace`, and returns `null` otherwise. A phase
+qualifies as a failure when **either** is true:
+
+1. `phase.status === 'fail'`, or
+2. a gate against it is **still failing on its latest attempt**.
+
+Rule 2 is `latestGates()`: the newest attempt of every `(phase_id, gate)` pair wins, and only that
+row's verdict counts. A gate that failed on attempt 1 and passed on attempt 2 was retried and
+resolved — carrying the stale failure forward would stamp a red plate across a green run, which is
+the one thing triage must never do. Failed gates the tracer wrote against no known phase get their
+own section rather than being attributed to a phase that did not earn them.
+
+Failures are ordered by `started_at` (unstarted last), tie-broken by `seq`, so **the plate leads
+with the root cause** and the rest are listed compactly.
+
+**Error-class events** are the two members of `EventType` that mean something went wrong — `error`
+and `gate_fail` — plus `tool_call` rows where `payloadOk(payload_json) === false`. The third is not
+error-class in the taxonomy, but a run that died on a bad bash call has its cause there and nowhere
+else, so it is carried alongside and rendered as `✗ tool_call` in `--fail` instead of the steel that
+`eventTypeVar()` would give it. Colour is never the only signal: the `✗` rides with it.
+
+#### 6.4.2 Chrome
+
+A `.plate` with a **3px `--fail` verdict rail** down its left side. Not a tinted panel — red is a
+verdict here, and it appears only on the rail, the warn glyph, the gate marks and the failed-tool
+glyph, never as a wash behind text.
+
+**Head-plate** — `--surface-2`, machined edge, double rule below, `padding: var(--sp-4) var(--sp-6)`:
+`DetailSection`'s disclosure conventions (a `ChevronRight` at 14px rotating 90°, `aria-expanded`,
+`aria-controls`, the stamp, the dotted `--tex-dots` filler) on a `<button>` that grows, **beside** a
+`<CopyPlate>` that does not. The component itself cannot be `DetailSection` — its head is a
+full-width button, and a button may not contain another button.
+
+- stamp `FAILURE TRIAGE` in `--fail-bright`, with a lucide `TriangleAlert` at 16px in `--fail`.
+- verdict readout, `--font-mono --fs-micro --text-dim .tnum`: `{n} failed phases · {m} failed gates`,
+  pluralised, the gate clause dropped at zero.
+- **`COPY REPRO BUNDLE`** — `<CopyPlate>` with `accent="var(--fail-bright)"`, **restamped** by a
+  **two-class** rule (`.head .copy`) so the override lands whatever order the CSS modules end up in
+  the bundle. It stays visible while the panel is collapsed: the collapsed plate is still the fastest
+  path to the clipboard.
+
+  The restamp is not decoration. `CopyPlate` is drawn for shell commands — docs rows and empty
+  states — so its own type is `--font-mono` at `--fs-sm`, and its label is whatever string it will
+  put on the clipboard. Here the label is an *action*, not a command, and §2.2 keeps mono out of the
+  UI voice: a button label is body or display. So the two-class rule re-types it as a stamp —
+  `--font-display` 700, `--fs-stamp`, `text-transform: uppercase`, `letter-spacing: var(--tr-stamp)`
+  — which is also why it may sit below the 14px prose floor (§1.3). The label inherits from `.plate`,
+  so restamping the button restamps its text without reaching into `CopyPlate`'s own module. Authored
+  casing stays lowercase, exactly as every other stamp in the app: the uppercase is presentation, and
+  the accessible name a screen reader announces is still "copy repro bundle".
+
+**Collapse state is remembered per session** in `sessionStorage` under
+`sssf.triage.collapsed:<adwId>` — `'1'` means collapsed, absent means open. A failure is loud by
+default; dismissing it must survive a reload of the same run without following the engineer into the
+next one. Storage access is wrapped: a denied `sessionStorage` (private mode, cookie policy) degrades
+to "always open", never to a crash.
+
+**Body** (`padding: var(--sp-6)`):
+
+1. **The root cause**, always visible — a 10px `--r-1` lane-colour chip (the lane's colour passed in
+   as `--lane`, §4), the phase name as an `<a href={hrefFor(adwId, phaseId)}>` **deep link** in
+   display 700, `<StatusChip>`, a compact runtime `<StatChip>`, then pushed right: `<ModelBadge>` and
+   three `<Tag>`s — `KIND`, `OWNER`, `ATTEMPT {attempt}/{retries}`. The attempt tag takes
+   `tone="fail"` **only when the retries actually ran out** (`retries > 0 && attempt >= retries`); a
+   phase that failed on its first and only attempt exhausted nothing, and saying so in red would be
+   an invention. Then the description, then `phase.error` in an `<ErrorBar label="Phase failed">`.
+2. **`FAILED GATES`** — a `<DetailSection>`, open by default. One plate per gate with a 3px `--fail`
+   left rule, the `✗` mark, the gate name, an `ATTEMPT` tag, a tabular `fmtClock`, and its violation
+   list in `--fail`. Repeated violation strings are keyed by text-plus-occurrence, exactly as
+   `GatesSection` does.
+3. **`GATES WITHOUT A PHASE`** — same rendering, only when loose gates exist.
+4. **`ERROR EVENTS`** — a `<DetailSection>`, open by default. The **last 8**, chronological:
+   `fmtClock` · type · `eventLabel(e)`; over 8 a `--text-faint` line says how many were withheld and
+   where the rest live.
+5. **`FINAL REPORT`** — closed by default, present only when the phase's last envelope carries
+   something. Prose fields (`summary`, `report`, `message`, `reason`, `notes`, `details`, `error`,
+   `output`, in that order) win over the raw envelope, trimmed to **480 chars**. Prose renders in an
+   engraved well in the **body** font — an engraved well holding text is still a well, but mono is
+   for ids, code and data, never for the app's voice. Only the serialised-JSON fallback gets `<pre>`.
+6. **`ALSO FAILED`** — closed by default, one compact row per remaining failure: lane chip, deep
+   link, compact `<StatusChip>`, and `{n} gates · {n} errors · {clock}`.
+
+#### 6.4.3 The bundle — `views/trace/reproBundle.ts`
+
+```ts
+export const SECTION_LIMIT = 15_000
+export const EXCERPT_LIMIT  = 480
+
+export const ERROR_EVENT_TYPES: ReadonlySet<string>   // 'error' | 'gate_fail'
+export function isErrorEvent(e: EventRow): boolean
+export function isFailedToolCall(e: EventRow): boolean
+export function failureEventsOf(events: EventRow[]): EventRow[]
+
+/** Newest attempt of every (phase_id, gate) pair. */
+export function latestGates(gates: GateResult[]): GateResult[]
+/** Those of the above still failing. */
+export function failedGates(gates: GateResult[]): GateResult[]
+
+export interface ReportExcerpt { text: string; prose: boolean }
+export function reportExcerpt(envelope: Envelope | undefined, limit?: number): ReportExcerpt | null
+export function phaseReportExcerpt(envelopes: Envelope[], phaseId: string, limit?: number): ReportExcerpt | null
+export function phaseFailureEvents(events: EventRow[], phaseId: string): EventRow[]
+
+export interface ReproPrompt { title: string; text: string }
+export interface ReproBundleInput {
+  session: Session | null
+  phase: Phase
+  events: EventRow[]        // the whole session's; the builder filters
+  envelopes: Envelope[]
+  gates: GateResult[]
+  prompts: readonly ReproPrompt[]
+  model: string | null
+}
+export function buildReproBundle(input: ReproBundleInput): string
+```
+
+**Section layout**, in this order. The reader — human or model — gets the story, then the
+identifying facts, then the evidence, and only then the two large blobs, which would otherwise push
+everything else below the fold.
+
+| # | Section | Form | Present when |
+|---|---|---|---|
+| 1 | `# SSSF repro bundle — {phase name}` | h1 | always |
+| 2 | `## What happened` | one generated paragraph | always |
+| 3 | `## Run` | fact list + `**Request**` fenced | always |
+| 4 | `## Phase` | fact list | always |
+| 5 | `## Phase error` | fenced `text` | `phase.error` |
+| 6 | `## Gates` | fenced `text` — every gate's latest attempt, ✓/✗, failed checks with notes, violations | the phase has gates |
+| 7 | `## Failure events` | fenced `text`, ISO timestamps | any error-class event |
+| 8 | `## Event tail (last N of M)` | fenced `text`, last **40** | the phase has events |
+| 9 | `## Phase report {i} — {output_type} · attempt {n} · valid\|invalid` | fenced `json` | one per envelope |
+| 10 | `## Compiled system prompt` / `## Compiled user prompt` | fenced `text` | `usePrompts` returned them |
+| 11 | provenance footer | `---` + one line | always |
+
+**The generated paragraph** is composed, not templated onto one shape: a phase that failed with no
+gates and no error events must still read as a sentence, and a green phase copied from its header
+must not read as an incident report. It states the phase, its agent and model, the run and workflow,
+the verb for its status, the duration and attempt, then — each only when it has something to say —
+the first line of `phase.error`, the gate tally with names, the error-event count with types, a note
+when the run is `fail` but this phase is not, and the engineer's flattened request.
+
+**Truncation.** Every fenced section is capped at `SECTION_LIMIT` and marked in place with
+`[truncated N chars]`. A single failing test can carry a megabyte of stdout in its gate note, and a
+bundle that blows the clipboard — or the context window it was assembled for — helps nobody. The
+marker exists so the reader knows material was **removed**, not never recorded.
+
+**Fences size themselves.** Compiled prompts are markdown and routinely contain ``` blocks; the
+fence is one backtick longer than the longest run inside its body, so a pasted section never splits
+in half. Multi-line values (`request`, `description`) are either flattened or given their own block —
+a list item containing a newline stops being a list item.
+
+**No live clock.** `buildReproBundle` takes no `nowMs` and a running phase reports no duration. The
+copied-tick in `<CopyPlate>` compares clipboard text to the string it was handed; a ticking duration
+would clear the tick under the engineer's hand at 4 Hz.
+
+#### 6.4.4 `COPY PHASE BUNDLE` in the phase header
+
+`PhaseHeader` gains an optional `bundle?: string`, rendered as a `<CopyPlate>` between the tag
+cluster and the close button, restamped by the same two-class rule (`.head .bundle`) for the same
+reason, quiet in `--text-dim` — it is an escape hatch to a debugging session, not the panel's
+headline. Stamped, it reads as one more member of the `OWNER` / `KIND` / `ATTEMPT` cluster it sits
+beside rather than as a stray line of code in the head-plate. It copies the **same document** scoped
+to the phase on screen, failed or not.
+
+`PhaseDetail` builds it, because that is where the prompts, envelopes, gates and parsed
+`agent_start` config already live; it gains an optional `session?: Session | null` (passed down by
+`SessionTrace`) purely so the `## Run` facts are not blank. The model comes from
+`agentConfig?.model` — the live `agent_start` payload — with no new plumbing.
+
+### 6.5 Follow mode — the waterfall tracks a live run
+
+The engineer starts a run and walks away from the keyboard. Coming back to a trace that has to be
+dragged into position is the same clerical work §6.4 deletes for a broken run, so follow mode
+deletes it for a live one: arm it once and the waterfall keeps the NOW line, the running block and
+the newest event under the reader's eye until the run stops.
+
+Owned by the trace builder (view B). One new file — `src/hooks/useFollowMode.ts` (§7.4) — plus
+additive chrome in `SessionTrace` and one additive prop on `TraceLane`. `TriagePanel` is untouched;
+the two plates coexist, triage above the spec plate, follow inside it.
+
+#### 6.5.1 Why it is a geometry, not a scroll
+
+The time scale is **fit-to-width** (§5.3.2), and that has a consequence worth stating plainly: for a
+running session `t1` includes `nowMs`, so `x(now)` is **always 100**. NOW is welded to the right
+edge and the whole run compresses as it gets longer. "Scroll to keep NOW at 70%" is therefore not
+expressible against the resting geometry — there is nothing to the right of NOW to scroll into, and
+nothing to scroll at all.
+
+So arming follow arms a **second geometry**, and only while armed:
+
+| | Resting | Following |
+|---|---|---|
+| Track width | `100% − rail − gutter` (fit) | `max(liveMs × 180px/min, fit)`, capped at `24000px` |
+| Lead column | `0` | `32%` of the plate — empty track in front of NOW |
+| Plate overflow | `hidden` | `overflow-x: auto` |
+| NOW sits at | the right edge, always | **70%** of the visible track |
+
+**Live density.** `180px` buys one minute of *real* time — `liveMs` is the sum of
+`scale.segments` durations, so elided idle (§5.3.2) is not paid for twice. The axis stays linear
+inside each segment; the cap only makes a very long run's minute thinner, it never bends the
+mapping.
+
+**The lead** is what makes 70% reachable. Without empty track in front of NOW the pin clamps to
+`maxScroll` and NOW lands hard against the right edge — the 70% would quietly become a lie. The lead
+is deliberately over-provisioned (a flat `32%` needs no measurement, and the pin target is clamped
+anyway, so surplus costs nothing). It is a real grid column carrying `--tex-dots` per §1.5, sitting
+after the queue gutter — which means at the pin the reader sees NOW at 70%, the queue in the 30%
+beyond it, and idle matrix past that.
+
+The waterfall's grid becomes four columns, driven entirely by custom properties so the resting case
+is byte-for-byte the three-column grid §5.3.2 specifies:
+
+```css
+grid-template-columns:
+  var(--rail-w)                                                         /* 260px / 200px */
+  max(var(--track-min), calc(100% - var(--rail-w) - var(--gutter-w)))
+  var(--gutter-w)                                                       /* 180px / 0 */
+  var(--lead-w);                                                        /* 0 unless armed */
+```
+
+`--track-min` and `--lead-w` are `0` in CSS and set inline by `FollowMode.vars`. The lane rails
+(`.axisRail`, `TraceLane .rail`) become `position: sticky; left: 0; z-index: var(--z-sticky)` with
+an opaque `--surface-1` fill, so a lane keeps its name, model and context gauge while its track runs
+underneath. Sticky costs nothing when there is nothing to scroll.
+
+#### 6.5.2 The pin
+
+Computed from measured geometry on every live tick (`useNow(250)` — no CSS animation, no
+`scroll-behavior`), in a **layout** effect so the track's new width and the scroll position land in
+the same frame:
+
+```
+railPx  = trackCell.left − plate.left + scrollLeft     // content-x where the track starts
+visible = clientWidth − railPx                          // the rail is sticky over the lead edge
+nowPx   = railPx + (clamp(nowPct, 0, 100) / 100) × trackCell.width
+target  = clamp(round(nowPx − railPx − 0.70 × visible), 0, scrollWidth − clientWidth)
+```
+
+- Movement under **1px** is left alone — the pin is already there, and moving costs a scroll event.
+- Corrections of **≥ 96px** (arming, resuming, a resize) glide with `behavior: 'smooth'`; the
+  per-tick creep — under a pixel at 180px/min — jumps. A glide is not re-targeted while it settles
+  unless its destination itself moved ≥ 96px, or four re-targets a second would restart the
+  animation forever.
+- **`prefers-reduced-motion: reduce` pins by jumping**, always. This is the one place a builder
+  reads the query in JS: the global block in §2.3 forces `scroll-behavior: auto`, but that rule
+  cannot reach `scrollTo({ behavior: 'smooth' })`. Read via `matchMedia`, kept live with a `change`
+  listener.
+
+#### 6.5.3 Suspension and resume
+
+Suspension is judged from **where the container ended up**, not from a catalogue of input events, so
+every route into the scrollbar counts the same: a drag of the bar, a touch flick, shift-wheel, a
+focused block scrolled into view.
+
+| | Rule |
+|---|---|
+| **Suspend** | a `scroll` lands more than **24px** from the position we last commanded. A horizontal `wheel` (`deltaX > deltaY`, or `shiftKey`) also suspends on the first notch, before its scroll lands. |
+| **Resume** | the scrolling comes to **rest** (350ms of quiet) within **56px** of the current pin target. |
+| **`F`** | resumes immediately when suspended; otherwise flips armed. |
+
+Two numbers, and the gap between them is the whole behaviour: **resume (56) is wider than suspend
+(24)** on purpose. A stray trackpad graze suspends and then heals itself; a real scroll back through
+the run stays suspended, and stays suspended as the pin target keeps advancing away from it. The
+350ms rest is what stops a drag that passes through the NOW region on its way back in time from
+re-arming the pin mid-gesture — without it, the first frame of a drag suspends and the second one
+resumes, forever.
+
+While suspended the toggle **stays on** and a stamped amber hint reads
+`PAUSED — SCROLL BACK OR PRESS F`. Following never fights the reader: no scroll is issued at all
+until it resumes.
+
+#### 6.5.4 Chrome
+
+All of it lives in the spec plate's first row (`.followBar`, a single hairline below it), and the
+whole row is absent unless `session.status === 'running'` — a switch with no wire is not offered.
+
+- **The switch.** A real `<button>` in stamp type (`FOLLOW`) with a 13px `Crosshair`,
+  `--surface-2`, machined edges, `--r-2`. Armed: `--amber` text on `--amber-wash` with an
+  `--amber-edge` hairline. Flat — no glow, no shadow bloom. Carries `aria-pressed`.
+- **The live readout**, pushed right: the newest event's type in `eventTypeVar()` colour as a stamp,
+  then `eventLabel(e)` in `--font-mono --fs-micro --text-dim` (ellipsised), then
+  `fmtOffset(now − started_at)` + ` ago` in `--text-faint .tnum`. Existing helpers only — no new
+  formatting. Hidden under 860px.
+- **The active block.** While armed, each running phase gets a flat 2px `--amber` rule milled
+  directly under its block (`top: 62px`, the block's `12px + 48px` plus a 2px gap), transitioning
+  `left`/`width` on the same `--dur-3 --ease-out-quart` the block does. It is *added to* the
+  existing running hatch (§5.3.2), not a replacement, and it is the reason `TraceLane` gains one
+  additive prop: `follow?: boolean`. **No glow.**
+- The waterfall foot rail gains `· F FOLLOW` while running, beside the lane keys.
+
+#### 6.5.5 Persistence and teardown
+
+The preference is per run in `sessionStorage` under **`sssf.follow:{adw_id}`** (`'1'`, or the key
+removed), read through the same try/catch shape as §6.4's collapse state — storage denied means
+follow is simply off, never a thrown render. It **defaults to off**: arming changes the waterfall's
+geometry, and a view that reshapes itself before being asked is a surprise, not a service.
+
+Follow is `stored && running`, so the run ending **disarms it by itself** — the switch and its row
+disappear, the active rules disappear, `--track-min` and `--lead-w` fall away, the track collapses
+back to fit-to-width and the plate stops being a scroll container. The stored preference is left
+alone; it only means anything while something is moving. Pending resume timers and any suspension
+are cleared on the same edge, and the scroll listeners are removed by the callback ref's cleanup —
+a callback ref, not an effect, because the waterfall only mounts once the first poll lands and an
+effect keyed on a ref object would never see it appear.
 
 ---
 
@@ -1022,6 +1352,7 @@ src/
     useSessionEvents.ts                 S   cursor-drain event tail for one adwId
     useSessionTrace.ts                  S   session + phases + agents + usage + events + envelopes + gates
     useElementWidth.ts                  S   ResizeObserver → px width
+    useFollowMode.ts                    B   §6.5 — live geometry, scroll pin, suspension
 
   components/                           S   shared primitives — ALL owned by scaffold
     TopBar.tsx
@@ -1054,6 +1385,8 @@ src/
       TraceLane.tsx
       PhaseBlock.tsx
       QueueGutter.tsx
+      TriagePanel.tsx                   B   §6.4 — the failure plate
+      reproBundle.ts                    B   §6.4.3 — shared with views/phase
       timeScale.ts
       lanes.ts
       *.module.css
@@ -1084,9 +1417,13 @@ src/
 `S` = scaffold agent · `A` = sessions builder · `B` = trace builder · `C` = phase-detail builder ·
 `D` = docs + palette builder.
 
-**`PhaseDetail` lives in `views/phase/` but is rendered by `SessionTrace` (view B).** That is the one
-sanctioned cross-view import; it is declared here so it is not an accident. Builder B imports
+**`PhaseDetail` lives in `views/phase/` but is rendered by `SessionTrace` (view B).** That is the
+first sanctioned cross-view import; it is declared here so it is not an accident. Builder B imports
 exactly one symbol — `PhaseDetail` — and passes the props in §7.7.
+
+**`views/trace/reproBundle.ts` is the second, and the last.** It is a pure module shared by the
+triage plate and the phase header, so the repro bundle exists once; it reads its derivations from
+`views/phase/phaseData` and is imported by `views/phase/PhaseHeader`. Full rationale in §6.4.
 
 ### 7.2 `App.tsx` — scaffold
 
@@ -1253,6 +1590,30 @@ export interface TraceData {
  * (That condition is a load-bearing performance decision — preserve it exactly.)
  */
 export function useSessionTrace(adwId: string): TraceData & Omit<PollState<unknown>, 'data'>
+
+// useFollowMode.ts                                                    §6.5
+export interface FollowModeOptions {
+  adwId: string                          // the per-run sessionStorage key
+  running: boolean                       // follow is only offered while live
+  nowPct: number                         // scale.x(nowMs), 0..100
+  liveMs: number                         // real, non-elided ms — drives live density
+  tick: number                           // re-pins whenever this changes (nowMs)
+  trackRef: RefObject<HTMLElement | null> // the axis track cell
+}
+export interface FollowMode {
+  armed: boolean                         // armed AND live; false the moment the run ends
+  suspended: boolean                     // armed, but the reader took the scrollbar
+  toggle: () => void                     // resume when suspended, otherwise flip
+  scrollerRef: (el: HTMLDivElement | null) => (() => void) | undefined
+  vars: CSSProperties                    // --track-min / --lead-w, empty when not following
+}
+/**
+ * Pins the NOW line at 70% of the visible track while a run is live. Owns the
+ * live-density geometry, the scroll pin, suspension/resume, and the per-run
+ * preference. No CSS animation: the pin is a measured scroll position applied
+ * on each live tick.
+ */
+export function useFollowMode(opts: FollowModeOptions): FollowMode
 ```
 
 ### 7.5 `TopBar` — scaffold
@@ -1528,12 +1889,33 @@ export interface QueueGutterProps {
   /** Horizontal strip layout below the waterfall, used under 1280px. */
   inline?: boolean
 }
+
+// views/trace/TriagePanel.tsx                                                builder B  §6.4
+export interface TriagePanelProps {
+  adwId: string
+  session: Session | null
+  /** Ordered by seq — the same array the waterfall draws. */
+  phases: Phase[]
+  /** Supplies each failure its lane colour, label and resolved model. */
+  lanes: Lane[]
+  events: EventRow[]
+  envelopes: Envelope[]
+  gates: GateResult[]
+}
+// Renders null when the run has no failed phase and no still-failing gate.
+// Fetches the failing agent's prompts through the shared `usePrompts` cache, so
+// opening the phase detail afterwards costs no second request.
+
+// views/trace/reproBundle.ts                                                 builder B  §6.4.3
+export function buildReproBundle(input: ReproBundleInput): string   // pure, no clock
 ```
 
 ```tsx
 // views/phase/PhaseDetail.tsx                                                builder C
 export interface PhaseDetailProps {
   phase: Phase
+  /** The run, for the repro bundle's `## Run` facts only (§6.4.4). */
+  session?: Session | null
   /** All events for the session; the view filters by phase_id and sorts by rowid. */
   events: EventRow[]
   envelopes: Envelope[]
@@ -1542,7 +1924,13 @@ export interface PhaseDetailProps {
 }
 
 // views/phase/PhaseHeader.tsx
-export interface PhaseHeaderProps { phase: Phase; durationMs: number; onClose: () => void }
+export interface PhaseHeaderProps {
+  phase: Phase
+  durationMs: number
+  /** Markdown repro bundle for this phase (§6.4.4). Omitted → no copy action. */
+  bundle?: string
+  onClose: () => void
+}
 
 // views/phase/SectionNav.tsx
 export interface SectionNavEntry { id: string; label: string; count?: number | null; present: boolean }
@@ -1967,4 +2355,6 @@ A view is done when all of the following hold.
 | Phase detail | two columns of collapsibles | instrument panel with a sticky stamped section rail |
 | Live | glowing green dot | three-state lamp with a ticking amber square and an age readout |
 | Navigation | mouse only | `Cmd+K` palette, `j/k`/arrows, `Enter`/`Esc`, everywhere |
+| Failures | found by clicking phases until one is red | triage plate leads the run; one button copies the whole repro bundle |
+| Live runs | NOW welded to the right edge; drag the trace back into place by hand | `F` arms follow — a live-density track that pins NOW at 70% and yields to the reader's scroll |
 | Motion | opacity pulses | staggered plate reveals, detented easing, mechanical ticks |

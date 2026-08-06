@@ -17,7 +17,8 @@ import { useListKeyboardNav } from '@/hooks/useListKeyboardNav'
 import { useNow } from '@/hooks/useNow'
 import { parseAgentStart } from '@/lib/events'
 import { ts } from '@/lib/format'
-import type { Envelope, EventRow as EventRowData, GateResult, Phase } from '@/lib/types'
+import type { Envelope, EventRow as EventRowData, GateResult, Phase, Session } from '@/lib/types'
+import { buildReproBundle } from '@/views/trace/reproBundle'
 import { AgentConfigSection } from './AgentConfigSection'
 import { CostSection } from './CostSection'
 import { EventsPanel } from './EventsPanel'
@@ -42,6 +43,12 @@ import s from './PhaseDetail.module.css'
 
 export interface PhaseDetailProps {
   phase: Phase
+  /**
+   * The run this phase belongs to. Only the repro bundle needs it — the panel
+   * itself is phase-scoped — so it is optional and its absence costs nothing
+   * but the run facts at the top of the copied document.
+   */
+  session?: Session | null
   /** All events for the session; the view filters by phase_id and sorts by rowid. */
   events: EventRowData[]
   envelopes: Envelope[]
@@ -71,7 +78,14 @@ const SEC = {
  * events, prompt panels) is keyed to `phase.phase_id` and therefore survives
  * the 500ms poll that replaces the phase object underneath it.
  */
-export function PhaseDetail({ phase, events, envelopes, gates, onClose }: PhaseDetailProps) {
+export function PhaseDetail({
+  phase,
+  session = null,
+  events,
+  envelopes,
+  gates,
+  onClose,
+}: PhaseDetailProps) {
   const phaseId = phase.phase_id
   const adwId = phase.adw_id
 
@@ -104,6 +118,25 @@ export function PhaseDetail({ phase, events, envelopes, gates, onClose }: PhaseD
   const evidence = useEvidence(adwId, phaseId, flowDirs)
 
   const prompts = usePrompts(adwId, phase.kind === 'agent' ? phase.owner : null)
+
+  /**
+   * The same document the triage panel copies, scoped to whatever phase is on
+   * screen — failed or not. Built here rather than in the header because this
+   * is where the prompts, envelopes and gates already live.
+   */
+  const bundle = useMemo(
+    () =>
+      buildReproBundle({
+        session,
+        phase,
+        events,
+        envelopes,
+        gates,
+        prompts: prompts.panels,
+        model: agentConfig?.model ?? null,
+      }),
+    [session, phase, events, envelopes, gates, prompts.panels, agentConfig?.model],
+  )
 
   const running = phase.status === 'running'
   const now = useNow(250, running)
@@ -222,7 +255,7 @@ export function PhaseDetail({ phase, events, envelopes, gates, onClose }: PhaseD
 
   return (
     <section className={cx('plate', s.panel)}>
-      <PhaseHeader phase={phase} durationMs={durationMs} onClose={onClose} />
+      <PhaseHeader phase={phase} durationMs={durationMs} bundle={bundle} onClose={onClose} />
 
       {phase.error ? (
         <div className={s.errorWrap}>
