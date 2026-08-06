@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .data_types import PiResult, UsageBreakdown
-from .utils import now_iso
+from .utils import StallWatchdog, now_iso
 
 CLAUDE_PATH = os.environ.get("CLAUDE_PATH", "claude")
 
@@ -111,13 +111,16 @@ def run(
     cmd += ["--permission-mode", "acceptEdits", "--dangerously-skip-permissions"]
     cmd.append(request.prompt)
 
+    # start_new_session puts claude in its own process group so the watchdog
+    # can take its children with it. -p mode needs no controlling terminal.
     process = subprocess.Popen(
         cmd, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, bufsize=1, cwd=request.cwd,
+        text=True, bufsize=1, cwd=request.cwd, start_new_session=True,
     )
     if on_spawn:
         on_spawn(process.pid)
+    watchdog = StallWatchdog(process, label="claude").start()
 
     # Accumulators. Claude's stream-json is a sequence of system/stream_event/
     # result lines; the authoritative final answer rides the `result` line, and
@@ -167,15 +170,20 @@ def run(
             on_event(event)
 
     assert process.stdout is not None
-    if raw_path:
-        with raw_path.open("a") as raw:
+    try:
+        if raw_path:
+            with raw_path.open("a") as raw:
+                for line in process.stdout:
+                    watchdog.bump()
+                    raw.write(line)
+                    raw.flush()
+                    parse_stream(line)
+        else:
             for line in process.stdout:
-                raw.write(line)
-                raw.flush()
+                watchdog.bump()
                 parse_stream(line)
-    else:
-        for line in process.stdout:
-            parse_stream(line)
+    finally:
+        watchdog.stop()
 
     stderr = process.stderr.read() if process.stderr else ""
     result.text = final_text
@@ -187,6 +195,8 @@ def run(
     if on_exit:
         on_exit(process.pid)
 
+    if watchdog.fired:
+        raise watchdog.stall_error()
     if result.returncode != 0 and not result.text:
         raise RuntimeError(
             f"claude exited {result.returncode}: {stderr.strip()[-800:]}")

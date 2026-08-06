@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .data_types import PiRequest, PiResult
-from .utils import now_iso, operator_env
+from .utils import StallWatchdog, now_iso, operator_env
 
 PI_PATH = os.environ.get("PI_PATH", "pi")
 # pi's merged model catalog moved from models.json to models-store.json.
@@ -254,65 +254,74 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     # EOF. That failure is silent and total: no request goes out, no bytes come
     # back, and the ADW blocks on a read loop with nothing to read. Observed as
     # a run that sat idle at 0% CPU with an empty raw_output.jsonl.
+    # start_new_session puts pi in its own process group so the watchdog can
+    # take its children with it. Nothing here needs a controlling terminal:
+    # stdin is DEVNULL and the stream is plain JSONL.
     process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
-                               env=operator_env())
+                               env=operator_env(), start_new_session=True)
     if on_spawn:
         on_spawn(process.pid)
+    watchdog = StallWatchdog(process, label="pi").start()
     done = False          # set when pi emits the terminal agent_settled event
-    with raw_path.open("a") as raw:
-        assert process.stdout is not None
-        for line in process.stdout:
-            raw.write(line)
-            raw.flush()                      # events land on disk as they happen
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if event.get("type") == "message_end":
-                message = event.get("message", {})
-                if message.get("role") == "assistant":
-                    text = _text_of(message)
-                    if text:
-                        result.text = text   # last assistant message wins
-                    usage = message.get("usage", {}) or {}
-                    turn = _context_tokens(usage)
-                    result.tokens += turn
-                    result.usage.add_turn(usage, turn)
-                    # Occupancy is read off the last VALID assistant turn, the
-                    # way pi does it — an aborted or errored turn reports usage
-                    # you can't trust, so it must not overwrite a good reading.
-                    if turn and message.get("stopReason") not in ("aborted", "error"):
-                        result.context_tokens = turn
-                    result.cost += (usage.get("cost", {}) or {}).get("total", 0.0) or 0.0
-            if on_event:
-                on_event(event)
-            if event.get("type") == "agent_settled":
-                # Terminal event: pi is done answering. It does NOT close
-                # stdout after settling (TUI-first binary), so break here —
-                # reading on would block forever on a dead-settled process.
-                done = True
-                break
+    try:
+        with raw_path.open("a") as raw:
+            assert process.stdout is not None
+            for line in process.stdout:
+                watchdog.bump()
+                raw.write(line)
+                raw.flush()                  # events land on disk as they happen
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "message_end":
+                    message = event.get("message", {})
+                    if message.get("role") == "assistant":
+                        text = _text_of(message)
+                        if text:
+                            result.text = text   # last assistant message wins
+                        usage = message.get("usage", {}) or {}
+                        turn = _context_tokens(usage)
+                        result.tokens += turn
+                        result.usage.add_turn(usage, turn)
+                        # Occupancy is read off the last VALID assistant turn,
+                        # the way pi does it — an aborted or errored turn
+                        # reports usage you can't trust, so it must not
+                        # overwrite a good reading.
+                        if turn and message.get("stopReason") not in ("aborted", "error"):
+                            result.context_tokens = turn
+                        result.cost += (usage.get("cost", {}) or {}).get("total", 0.0) or 0.0
+                if on_event:
+                    on_event(event)
+                if event.get("type") == "agent_settled":
+                    # Terminal event: pi is done answering. It does NOT close
+                    # stdout after settling (TUI-first binary), so break here —
+                    # reading on would block forever on a dead-settled process.
+                    done = True
+                    break
+    finally:
+        watchdog.stop()
 
     # pi may linger after agent_settled; terminate it as cleanup. If the
     # process already exited (stdout EOF path), wait() returns immediately.
     try:
         process.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
+        # The group, not just pi: anything pi spawned would otherwise outlive
+        # the run holding its ports and file handles.
+        watchdog.kill_group()
+        process.wait()
     stderr = process.stderr.read() if process.stderr else ""
     result.returncode = 0 if done else process.wait()
     if on_exit:
         on_exit(process.pid)
+    if watchdog.fired:
+        raise watchdog.stall_error()
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"pi exited {result.returncode}: {stderr.strip()[-800:]}")
     return result
