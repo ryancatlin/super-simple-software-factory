@@ -59,6 +59,12 @@ def _check_dir(run, name: str) -> Path:
     return path
 
 
+def _decoded(value) -> str:
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode(errors="replace")
+    return value or ""
+
+
 def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
     phase = run.phases[-1]
     output_dir = _check_dir(run, spec.name)
@@ -76,6 +82,11 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
             spec.argv,
             cwd=run.repo_root,
             env=env,
+            # Never hand a suite the operator's terminal: vitest (and friends)
+            # see a TTY on stdin and drop into WATCH MODE — green in seconds,
+            # then waiting for file changes until the deadline kills them.
+            # Observed live on a run launched from the engineer's own shell.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=spec.timeout_seconds,
@@ -84,9 +95,12 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
         stdout = completed.stdout
         stderr = completed.stderr
     except subprocess.TimeoutExpired as error:
+        # TimeoutExpired carries the partial output as BYTES even under
+        # text=True — decode, or the deadline that fired correctly crashes the
+        # run it was protecting (observed live: str + bytes killed an ADW).
         returncode = 124
-        stdout = error.stdout or ""
-        stderr = (error.stderr or "") + f"\nTimed out after {spec.timeout_seconds}s."
+        stdout = _decoded(error.stdout)
+        stderr = _decoded(error.stderr) + f"\nTimed out after {spec.timeout_seconds}s."
     except OSError as error:
         # A missing binary lands here as exit 127 with the real message — no
         # pre-flight probe needed, and none wanted.
