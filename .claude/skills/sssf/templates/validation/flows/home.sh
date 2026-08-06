@@ -3,39 +3,46 @@
 #
 # Run by adw_modules/services.py with:
 #   $BASE_URL       the running service's origin (from validation.yaml health_url)
-#   $EVIDENCE_DIR   where every artifact must land (also the cwd). Always pass
-#                   agent-browser screenshot an explicit path — its default
-#                   save location is its own tmp dir, NOT the cwd.
+#   $EVIDENCE_DIR   where every artifact must land (also the cwd)
+#   $FLOW_LIB       the factory's verb library — source it, do not re-derive it
 #
-# agent-browser is the primary capture instrument: `snapshot -i` and `get text`
-# produce TEXT evidence any validator can judge directly, and screenshots feed
-# the mechanical toolkit (OCR sidecars, blank detection, baseline diffs — see
-# services.py). curl is the degrade path, not the default.
+# The verbs are MACHINERY (adws/adw_modules/flow_lib/, protected and refreshed
+# by `just update`). They already get right what hand-rolled curl gets wrong:
+# exact status, non-empty body, required content, deadlines, locale-proof
+# timing, and a degrade path that STILL ASSERTS when agent-browser is missing.
 #
-# A flow is a KNOWN sequence: open, snapshot, screenshot. Exit non-zero on any
-# mechanically-checkable failure (bad status, missing element). What the
-# evidence MEANS is the validator agent's job, not this script's.
+#   fetch_expect <url> <outfile> <status> [max_seconds] [required_string ...]
+#   capture      <name> <url>                     # asserts 2xx, then snapshot + screenshot
+#   capture_wait <name> <url> <pattern> [timeout] # polls a client-rendered page
+#   have_browser / require_browser
+#
+# Exit non-zero on any mechanically-checkable failure — THE EXIT CODE IS THE
+# VERDICT. What the evidence MEANS is the validator agent's job, not this
+# script's. A flow that saves nothing is failed by services.py regardless of
+# its exit code: an exit code is a verdict only when evidence stands behind it.
 #
 # This starter proves the loop end to end. Replace it with your real flows —
-# one journey per flow (login, create-thing, checkout), declared in
+# one journey per flow (login, create-thing, checkout), each declared in
 # validation.yaml, opening lines carrying this `# Flow:` header.
 set -euo pipefail
 
-# Always-on baseline: the page answers 200, body saved (services.py adds a
-# stripped-text sidecar next to it).
-status=$(curl -sS -o "$EVIDENCE_DIR/home.html" -w '%{http_code}' "$BASE_URL/")
-echo "GET $BASE_URL/ -> $status" > "$EVIDENCE_DIR/home.status"
-[ "$status" = "200" ]
+source "$FLOW_LIB/http.sh"
+source "$FLOW_LIB/browser.sh"
 
-# Primary capture: element map + visual evidence via agent-browser.
-if command -v agent-browser >/dev/null 2>&1 || npx --no-install agent-browser --version >/dev/null 2>&1; then
-  npx agent-browser open "$BASE_URL/"
-  npx agent-browser snapshot -i > "$EVIDENCE_DIR/home.snapshot.txt"
-  npx agent-browser screenshot "$EVIDENCE_DIR/home.png"   # explicit path — the default saves to agent-browser's tmp dir
-  npx agent-browser close
+# Always-on baseline: the page answers 200 with a non-empty body, inside 30s.
+# Add required strings once you know what this page must always say — a status
+# code alone is the weakest assertion there is, and the validator's
+# assertion-strength audit will say so.
+fetch_expect "$BASE_URL/" home.html 200 30
+
+# Visual + structural evidence. capture asserts the page served 2xx before it
+# screenshots: a browser renders an error page perfectly happily, and a
+# screenshot of one looks exactly like evidence.
+if have_browser; then
+  capture home "$BASE_URL/"
 else
-  # Degrading to curl-only evidence is a VISIBLE choice, never a silent one.
-  # If this project's validation needs visual evidence, replace this branch
-  # with `exit 1` so a missing browser fails the flow instead of thinning it.
+  # Visibly thinner, never silently thinner. If this project's validation
+  # genuinely needs visual evidence, swap this for `require_browser` so a
+  # missing browser fails the flow instead of quietly shrinking it.
   echo "agent-browser not installed; curl evidence only" > "$EVIDENCE_DIR/no-browser.note"
 fi

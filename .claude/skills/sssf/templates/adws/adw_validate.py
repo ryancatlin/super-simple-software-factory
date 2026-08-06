@@ -49,6 +49,10 @@ For each acceptance criterion, cheapest first:
 
 Probes carry the same mechanical contract as flows: run with $BASE_URL and $EVIDENCE_DIR set, cwd = $EVIDENCE_DIR; agent-browser is the primary instrument (open, snapshot -i, get text @ref, screenshot — ALWAYS an explicit path like "$EVIDENCE_DIR/<name>.png"; poll client-rendered pages until the expected content appears, bounded retries then fail); curl is the degrade path; save evidence and exit non-zero on any checkable failure. THE EXIT CODE IS THE VERDICT: assert the criterion itself, never less — a probe that opens the page but does not assert the promised behaviour proves nothing and will be failed by the audit.
 
+Use the factory's verbs before hand-rolling anything: `source "$FLOW_LIB/http.sh"` gives you `fetch_expect <url> <outfile> <status> [max_seconds] [required_string ...]`; `source "$FLOW_LIB/browser.sh"` gives you `have_browser`, `require_browser`, `capture <name> <url>`, `capture_wait <name> <url> <pattern> [timeout]`. They assert status, non-empty body, content and deadline correctly, and their degrade path still asserts. Hand-rolled curl is where weak assertions come from.
+
+Never: assert a frozen count or frozen prose ("42 results", a marketing sentence) — content changes and the probe reds for nothing; assert against anything under adws/adw_data/sessions/ (a past run's evidence is frozen and cannot fail — the lint rejects it); point a negative/unreachable-target probe at a REAL hostname (use an RFC 5737 address like 192.0.2.1 or 10.255.255.1 — a production host gets hammered by every run). A negative probe needs a positive control first: prove the instrument sees the real app working, or its failure proves nothing about anything.
+
 Report `mapping` with every criterion VERBATIM and `covered_by` naming declared flows/probes; `new_probes` lists any scripts you wrote. Code checks the mapping for totality before the server boots, executes the floor plus every cited probe, and computes the verdict from exit codes. Do NOT start the service or run anything yourself.
 
 """

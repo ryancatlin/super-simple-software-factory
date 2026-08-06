@@ -18,7 +18,7 @@
 
 Audit the proof, not the app. The exit codes in `previous_envelope` already decided whether the running app behaved; your ruling is a veto on dishonest instruments and degraded evidence.
 
-1. List your audit scenarios: criteria-vs-request (when `prompt` carries acceptance criteria and a coverage mapping), probes-vs-criteria (open each cited script — do its assertions test the criterion, not less?), and evidence sanity per `previous_envelope.evidence_dirs` entry (start with `toolkit.txt`; blank-flagged screenshots and unexplained baseline drift are degraded evidence).
+1. List your audit scenarios: criteria-vs-request (when `prompt` carries acceptance criteria and a coverage mapping), probes-vs-criteria (open each cited script — do its assertions test the criterion, not less?), assertion strength (name each script's WEAKEST assertion and say whether the feature could break visibly while the script stays green — if it could, that is a red), and evidence sanity per `previous_envelope.evidence_dirs` entry (start with `toolkit.txt`; blank-flagged screenshots and unexplained baseline drift are degraded evidence).
 2. Rule on every scenario — one `scenarios` entry each, citing the script or evidence file.
 3. Write your ruling to `<context_handoff_dir>/validation_report.md`, then emit your `Report` JSON.
 

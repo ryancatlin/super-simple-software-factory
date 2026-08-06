@@ -70,6 +70,48 @@ totality BEFORE the server boots, and the verdict is computed from exit codes
 probe that proves durable is promoted to the floor deliberately:
 `just promote <probe_name>`.
 
+**The verb library — `$FLOW_LIB`:** flows and probes do not hand-roll curl.
+`adws/adw_modules/flow_lib/` is factory machinery (protected, refreshed by
+`just update`, agent-unwritable), exported to every flow as `$FLOW_LIB` beside
+`$BASE_URL` and `$EVIDENCE_DIR`:
+
+```bash
+source "$FLOW_LIB/http.sh"      # fetch_expect <url> <outfile> <status> [max_seconds] [required_string ...]
+source "$FLOW_LIB/browser.sh"   # have_browser · require_browser · capture <name> <url> · capture_wait <name> <url> <pattern> [timeout]
+```
+
+`fetch_expect` asserts the exact status, a non-empty body, every required
+string, and the deadline (locale-proof — curl's `%{time_total}` is written with
+the locale's decimal separator, and a comma silently breaks naive numeric
+comparison). `capture` asserts the page served 2xx before it screenshots it: a
+browser renders a 404 happily, and a screenshot of an error page looks like
+evidence. `capture_wait` polls a client-rendered page for the pattern, and its
+no-browser branch still asserts — it fetches the page and requires the pattern
+in the markup, writing `degraded.note` to say the screenshot is what was lost.
+A hand-rolled `else echo "no browser"` branch returns 0 with the journey's only
+assertion skipped; that shipped two green runs before this library existed.
+
+**Anti-patterns the machinery now rejects:**
+
+- **No evidence, no pass.** A flow that exits 0 having written nothing to
+  `$EVIDENCE_DIR` is marked failed. An exit code is the verdict only when there
+  is evidence behind it.
+- **No asserting on run artifacts.** A script referencing `adw_data/sessions/`
+  fails the lint. A past run's evidence is frozen: it cannot fail when the
+  feature breaks, or when the app is not even running.
+- **No frozen counts or frozen prose.** "42 results", a marketing sentence — the
+  probe reds on an ordinary content change and teaches everyone to ignore it.
+- **No real hostnames in negative probes.** An unreachable-target probe uses an
+  RFC 5737 address (`192.0.2.1`) or `10.255.255.1`, never a production host —
+  otherwise every run hammers it. And a negative probe needs a positive control
+  first: prove the instrument observes the real app working, or its failure
+  proves nothing.
+- **Weak assertions are a red verdict.** The validator's assertion-strength
+  audit names each script's weakest check and asks whether the feature could
+  break visibly while the script stays green. A bare substring grep a CSS class
+  would satisfy, or a 200-only check on a content page, fails the audit even
+  when every flow passed.
+
 **Ship-shaped, not dev-shaped:** the declaration validates the artifact you
 would deploy. `service.prepare` is the production build (e.g.
 `["npm","run","build"]`, with `prepare_timeout_seconds`); `service.command`

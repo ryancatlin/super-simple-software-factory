@@ -7,7 +7,10 @@ leave. So every step has a deadline, every spawned process is registered in the
 
 Split on purpose:
   - This module is MACHINERY. It lives in adw_modules/ (protected_files), so no
-    agent can edit it.
+    agent can edit it. So does flow_lib/ — the verbs flows source ($FLOW_LIB,
+    exported below beside $BASE_URL and $EVIDENCE_DIR): asserting a status
+    code or waiting for a page to render is a known command, and every flow
+    hand-rolling its own was where the weak assertions came from.
   - The DECLARATION — what to start, what to capture — lives in
     adws/adw_data/validation/, which is user-owned and agent-writable. That is
     what lets the factory build a project's own validation: an agent proposes
@@ -175,6 +178,7 @@ def stop(run, handle: Optional[ServiceHandle]) -> bool:
 
 # ── flow library neatness (mechanical, not disciplinary) ────────────────────
 
+FLOW_LIB_DIR = "adws/adw_modules/flow_lib"        # factory-owned verbs, agent-unwritable
 FLOWS_DIR = "adws/adw_data/validation/flows"
 LIB_DIR = "adws/adw_data/validation/flows/lib"    # shared steps, sourced by flows
 PROBES_DIR = "adws/adw_data/validation/flows/probes"  # request-scoped acceptance journeys
@@ -182,6 +186,27 @@ HEADER_PREFIX = "# Flow:"
 LIB_HEADER_PREFIX = "# Step:"
 PROBE_HEADER_PREFIX = "# Probe:"
 HEADER_SCAN_LINES = 5
+RUN_ARTIFACTS_MARKER = "adw_data/sessions/"
+
+
+def _run_artifact_violation(text: str, label: str) -> str | None:
+    """A script asserting on a past run's evidence instead of on the product.
+
+    Session dirs are frozen output: a probe pointed at one keeps passing long
+    after the feature it "proves" is gone, and keeps passing if the app is not
+    even running. Observed live — a probe pinned to a dead session directory.
+
+    Comment lines are skipped: flows legitimately DOCUMENT where their evidence
+    lands, and a lint that fires on prose gets worked around rather than obeyed.
+    Only executable text counts.
+    """
+    code = "\n".join(line for line in text.splitlines()
+                     if not line.lstrip().startswith("#"))
+    if RUN_ARTIFACTS_MARKER not in code:
+        return None
+    return (f"{label}: references run artifacts under {RUN_ARTIFACTS_MARKER} — probes "
+            f"assert the product, not the trace. A past run's evidence is frozen: it "
+            f"cannot fail when the feature breaks. Assert against $BASE_URL instead.")
 
 
 def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
@@ -199,6 +224,9 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
     registry rule but carry their own `# Step: <name> — <what it does>` header
     — so `grep '^# Step:'` over lib/ is the shared-step catalogue, and a
     declared flow living under lib/ is itself a violation.
+
+    A fourth rule is about honesty rather than neatness: no script may assert
+    against adw_data/sessions/. See _run_artifact_violation.
     """
     failures: list[str] = []
     declared: dict = {}
@@ -231,7 +259,11 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
                     f"outside flows/probes/ — probes live there so the floor stays "
                     f"visibly minimal.")
             declared[script.resolve()] = flow.name
-            head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
+            text = script.read_text()
+            violation = _run_artifact_violation(text, f"{flow.name}: {flow.script}")
+            if violation:
+                failures.append(violation)
+            head = text.splitlines()[:HEADER_SCAN_LINES]
             if not any(line.startswith(header) for line in head):
                 failures.append(
                     f"{flow.name}: {flow.script} is missing its `{header} <name> — "
@@ -240,7 +272,12 @@ def lint_flows(decl: ValidationDecl, repo_root) -> list[str]:
     if flows_dir.is_dir():
         for script in sorted(flows_dir.rglob("*.sh")):
             if script.resolve().is_relative_to(lib_dir):
-                head = script.read_text().splitlines()[:HEADER_SCAN_LINES]
+                text = script.read_text()
+                violation = _run_artifact_violation(
+                    text, str(script.relative_to(repo_root)))
+                if violation:
+                    failures.append(violation)
+                head = text.splitlines()[:HEADER_SCAN_LINES]
                 if not any(line.startswith(LIB_HEADER_PREFIX) for line in head):
                     failures.append(
                         f"{script.relative_to(repo_root)}: shared step is missing its "
@@ -378,7 +415,11 @@ def _run_flow(run, flow: FlowSpec, base_url: str, seq: int) -> FlowResult:
     script = Path(run.repo_root) / flow.script
     argv = ["bash", str(script)]
     command = shlex.join(argv)
-    env = {**operator_env(), "BASE_URL": base_url, "EVIDENCE_DIR": str(evidence_dir)}
+    # FLOW_LIB points at the factory's own verbs (fetch_expect, capture_wait…),
+    # which flows `source` instead of hand-rolling curl and browser assertions.
+    # Absolute, like EVIDENCE_DIR, because the flow's cwd is its evidence dir.
+    env = {**operator_env(), "BASE_URL": base_url, "EVIDENCE_DIR": str(evidence_dir),
+           "FLOW_LIB": str((Path(run.repo_root) / FLOW_LIB_DIR).resolve())}
 
     run.console.note(f"flow {flow.name}: {command}")
     started_at = now_iso()
@@ -400,11 +441,23 @@ def _run_flow(run, flow: FlowSpec, base_url: str, seq: int) -> FlowResult:
         stderr = str(error)
 
     duration = time.monotonic() - clock
+
+    # Counted BEFORE flow.log and the toolkit sidecars land, so what remains is
+    # exactly what the FLOW saved. An exit code is the verdict only when there
+    # is evidence behind it: a script that asserted nothing and touched nothing
+    # exits 0 just as cheerfully as one that proved the journey.
+    saved = sorted(p.name for p in evidence_dir.iterdir() if p.is_file())
+    if returncode == 0 and not saved:
+        stderr += ("\nEVIDENCE CHECK FAILED: exit 0 but no evidence saved — a flow "
+                   "that recorded nothing proved nothing. Write your response "
+                   "bodies, snapshots and screenshots to $EVIDENCE_DIR.")
+
     (evidence_dir / "flow.log").write_text(
         f"$ {command}\nexit: {returncode}\nduration_seconds: {duration:.3f}\n"
+        f"evidence_files: {', '.join(saved) or 'NONE'}\n"
         f"\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}\n")
     _enrich_evidence(flow.name, evidence_dir, run.repo_root)
-    passed = returncode == 0
+    passed = returncode == 0 and bool(saved)
     run.tracer.event(EventRecord(
         adw_id=run.adw_id, phase_id=phase.phase_id, type="tool_call",
         name=f"flow:{flow.name}",
