@@ -1,0 +1,32 @@
+.empty {
+  padding: var(--sp-11) var(--sp-8);
+  max-width: 560px;
+  margin-inline: auto;
+  text-align: left;
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+}
+
+.title {
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-stamp);
+}
+
+.body {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  max-width: 60ch;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+  margin-top: var(--sp-7);
+}
+
+.link {
+  font-size: var(--fs-sm);
+}

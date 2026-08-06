@@ -1,0 +1,36 @@
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-1);
+  flex: none;
+}
+
+.success {
+  background: var(--pass);
+}
+
+/* A fail mark carries a notch as well as its colour. */
+.fail {
+  background: var(--fail);
+  box-shadow: inset 0 0 0 1px var(--surface-0);
+}
+
+.running {
+  background: var(--amber);
+  animation: lamp 1s steps(1, end) infinite;
+}
+
+.queued {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--text-ghost);
+}
+
+.none {
+  color: var(--text-ghost);
+}

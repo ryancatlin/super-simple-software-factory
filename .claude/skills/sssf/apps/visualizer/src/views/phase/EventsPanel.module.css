@@ -1,0 +1,26 @@
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  /* The double rule: two hairlines with a gap, never one thick border. */
+  border-bottom: 1px solid var(--edge-strong);
+  box-shadow: 0 2px 0 -1px var(--edge-soft);
+}
+
+.icon {
+  flex: none;
+  color: var(--text-ghost);
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+.faint {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}

@@ -1,0 +1,53 @@
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  white-space: nowrap;
+}
+
+.lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-1);
+  flex: none;
+}
+
+.word {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-stamp);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-stamp);
+}
+
+.age {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+/* live — the lamp ticks; the word is amber. */
+.live .lamp {
+  background: var(--amber);
+  animation: lamp 1s steps(1, end) infinite;
+}
+
+.live .word {
+  color: var(--amber);
+}
+
+.stale .lamp {
+  background: var(--amber-dim);
+}
+
+.stale .word {
+  color: var(--text-dim);
+}
+
+.offline .lamp {
+  background: var(--fail);
+}
+
+.offline .word {
+  color: var(--fail);
+}

@@ -1,0 +1,79 @@
+.usage {
+  width: 100%;
+  max-width: 420px;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.usage th {
+  padding: 0 0 var(--sp-3);
+  text-align: right;
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.usage td {
+  padding: var(--sp-2) 0;
+}
+
+.k {
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.n,
+.c {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.c {
+  color: var(--amber-dim);
+}
+
+/* Thinking sits inside output — indent it and mute it so the column still
+   reads as a sum of the un-indented rows. */
+.nested .k {
+  padding-left: var(--sp-7);
+  color: var(--text-faint);
+}
+
+.nested .n,
+.nested .c {
+  color: var(--text-faint);
+}
+
+.total td {
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--edge-strong);
+  font-weight: 600;
+}
+
+.total .k {
+  color: var(--text-hi);
+}
+
+.total .n,
+.total .c {
+  color: var(--text-hi);
+}
+
+.note {
+  margin: var(--sp-5) 0 0;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  max-width: 60ch;
+}
+
+/* The component column's header is a stamp with nothing to say — keep it in
+   the accessibility tree, out of the plate. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

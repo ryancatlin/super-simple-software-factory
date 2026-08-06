@@ -3,8 +3,9 @@
  *
  * Same safety model as markdown.ts: every character of input is HTML-escaped;
  * the only tags in the output are the <span>s this module writes. Token
- * colors live in style.css under the .j-* classes.
+ * colors live in styles/base.css under the .j-* classes.
  */
+import { prettyJson } from './format'
 
 export function escapeHtml(s: string): string {
   return s
@@ -46,9 +47,16 @@ export function highlightJsonText(text: string): string {
 /** Pretty-print raw JSON and highlight it; non-JSON falls back to escaped raw. */
 export function highlightJson(raw: string | null | undefined): string {
   if (!raw) return ''
+  // The pretty-printer lives in format.ts and only there. prettyJson swallows
+  // its own parse failure and hands the input back verbatim, which is
+  // indistinguishable from a document that simply round-trips (`{}`, `1`), so
+  // the validity question is asked first: text that is not JSON has no tokens
+  // worth colouring and is escaped as-is. Payloads are small and every caller
+  // memoises, so the second parse costs nothing worth a duplicated printer.
   try {
-    return highlightJsonText(JSON.stringify(JSON.parse(raw), null, 2))
+    JSON.parse(raw)
   } catch {
     return escapeHtml(raw)
   }
+  return highlightJsonText(prettyJson(raw))
 }

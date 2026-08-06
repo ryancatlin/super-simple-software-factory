@@ -1,0 +1,94 @@
+.rail {
+  position: sticky;
+  /* Clears the 56px head-plate plus the panel's own top rule. */
+  top: 96px;
+  align-self: start;
+  z-index: var(--z-sticky);
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: none;
+  border-left: 2px solid var(--edge);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color var(--dur-2) var(--ease-out-quart),
+    border-color var(--dur-2) var(--ease-out-quart);
+}
+
+.link:hover {
+  background: var(--surface-2);
+  border-left-color: var(--edge-strong);
+}
+
+.link:hover .label {
+  color: var(--text-dim);
+}
+
+.active {
+  border-left-color: var(--amber);
+  background: var(--amber-wash);
+}
+
+.active .label {
+  color: var(--amber);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+/* Below the two-column break the rail lies down into a scrolling strip. */
+@media (max-width: 1100px) {
+  .rail {
+    position: static;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--edge-soft);
+    padding-bottom: var(--sp-3);
+  }
+
+  .list {
+    flex-direction: row;
+    gap: var(--sp-2);
+  }
+
+  .link {
+    width: auto;
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 2px solid var(--edge);
+    border-radius: var(--r-2) var(--r-2) 0 0;
+  }
+
+  .active {
+    border-bottom-color: var(--amber);
+  }
+}

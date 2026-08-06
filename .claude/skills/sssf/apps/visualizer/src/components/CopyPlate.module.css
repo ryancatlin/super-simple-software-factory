@@ -1,0 +1,40 @@
+.plate {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease-out-quart);
+}
+
+.plate:hover {
+  border-color: var(--accent);
+}
+
+.plate:hover .icon {
+  color: var(--accent);
+}
+
+.label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.icon {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-ghost);
+  transition: color var(--dur-2) var(--ease-out-quart);
+}
+
+.done {
+  color: var(--pass);
+}
+
+.plate:hover .done {
+  color: var(--pass);
+}

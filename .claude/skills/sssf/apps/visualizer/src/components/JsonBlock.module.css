@@ -1,0 +1,4 @@
+/* `pre` already carries the engraved-well recipe from base.css. */
+.json {
+  font-size: var(--fs-sm);
+}

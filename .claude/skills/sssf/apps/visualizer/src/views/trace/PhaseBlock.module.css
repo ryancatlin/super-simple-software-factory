@@ -1,0 +1,203 @@
+/* A phase block — a machined segment sitting at its true time. */
+
+.block {
+  position: absolute;
+  top: 12px;
+  height: 48px;
+  min-width: 6px;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  background: color-mix(in oklab, var(--lane) 12%, var(--surface-1));
+  border: 1px solid color-mix(in oklab, var(--lane) 45%, transparent);
+  border-radius: var(--r-2);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--lane) 30%, transparent);
+  z-index: var(--z-block);
+  transition:
+    left var(--dur-3) var(--ease-out-quart),
+    width var(--dur-3) var(--ease-out-quart),
+    background-color var(--dur-2) var(--ease-out-quart);
+}
+
+.block:hover {
+  background: color-mix(in oklab, var(--lane) 20%, var(--surface-1));
+}
+
+/* Decorative overlay — carries the running / failed hatch. */
+.face {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ── states ───────────────────────────────────────────────────────────────── */
+
+.running {
+  border-left-width: 2px;
+  border-left-color: var(--amber);
+}
+
+/* The conveyor is the only motion on a running block — no pulse. */
+.running .face {
+  background-image: var(--tex-hatch);
+  animation: hatch-run 1.1s linear infinite;
+}
+
+.fail {
+  border-color: var(--fail);
+  border-bottom-width: 2px;
+}
+
+.fail .face {
+  background-image: var(--tex-hatch-fail);
+}
+
+/* Machinery green, verdict red: the phase completed, its verdict did not pass. */
+.verdictFail {
+  border-color: var(--verdict);
+}
+
+.queued {
+  border-style: dashed;
+  border-color: var(--edge-strong);
+  background: transparent;
+}
+
+.selected {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  background: color-mix(in oklab, var(--lane) 20%, var(--surface-1));
+}
+
+/* Keyboard cursor inside the focused lane — quieter than route selection. */
+.cursor {
+  outline: 1px dashed var(--amber-edge);
+  outline-offset: 2px;
+}
+
+/* ── content ──────────────────────────────────────────────────────────────── */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-4) var(--sp-4);
+  overflow: hidden;
+  white-space: nowrap;
+  line-height: var(--lh-tight);
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  min-width: 0;
+  line-height: var(--lh-tight);
+}
+
+.glyph {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-ghost);
+}
+
+/* A block too narrow for its name keeps only the verdict glyph, centred. */
+.block > .glyph {
+  margin: auto;
+}
+
+.glyph.success {
+  color: var(--pass);
+}
+
+.glyph.fail {
+  color: var(--fail);
+}
+
+.glyph.running {
+  color: var(--amber);
+}
+
+.glyph.queued {
+  color: var(--text-ghost);
+}
+
+.glyph.verdictFail {
+  color: var(--verdict);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.duration {
+  flex: none;
+  margin-left: auto;
+}
+
+.desc {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-snug);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Keep the description clear of the stamp pinned to the bottom-right. */
+.verdictFail .desc {
+  padding-right: 54px;
+}
+
+/* Colour is never the only signal for a failed verdict. */
+.verdictStamp {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-1);
+  color: var(--verdict);
+  pointer-events: none;
+}
+
+/* ── tool-call ticks along the block's bottom edge ────────────────────────── */
+
+.tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 8px;
+  background: var(--text-faint);
+  opacity: 0.55;
+  border-radius: var(--r-1);
+  pointer-events: none;
+}
+
+.tickErr {
+  width: 2px;
+  height: 10px;
+  background: var(--fail);
+  opacity: 1;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

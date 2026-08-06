@@ -1,0 +1,331 @@
+/**
+ * Machine Shop global sheet — DESIGN_SPEC.md §3.
+ *
+ * Everything else in the app is a CSS Module. The only global classes allowed
+ * here are the utilities below and the two injected-HTML families (.j-* from
+ * lib/highlight.ts and .md from lib/markdown.ts), which scoped styles cannot
+ * reach because the markup is produced as a string.
+ */
+
+/* 1 ── reset ─────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* 2 ── body: warm charcoal + a fixed dot matrix. No aurora, no gradients. ── */
+
+body {
+  background-color: var(--surface-0);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The dot matrix reads at 40% strength — a texture, not a pattern. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--surface-0);
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 3 ── app root ──────────────────────────────────────────────────────────── */
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4 ── links ─────────────────────────────────────────────────────────────── */
+
+a {
+  color: var(--amber);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--amber-bright);
+}
+
+/* 5 ── buttons inherit the type system ───────────────────────────────────── */
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* 6 ── focus ─────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* 7 ── tabular numerals ──────────────────────────────────────────────────── */
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 8 ── the stamp: silk-screened label ────────────────────────────────────── */
+
+.stamp {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-stamp);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-stamp);
+  color: var(--text-faint);
+}
+
+/* 9 ── the machined plate: 1px light along the top inside edge, dark below ─ */
+
+.plate {
+  background: var(--surface-1);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-3);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--edge-shadow);
+}
+
+/* 10 ── the engraved well: darker than its parent, edge-lines inverted ───── */
+
+.well {
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+}
+
+/* 11 ── pre is always an engraved well ───────────────────────────────────── */
+
+pre {
+  margin: 0;
+  padding: var(--sp-5);
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 12 ── JSON tokens — spans emitted by lib/highlight.ts ──────────────────── */
+
+.j-key {
+  color: var(--j-key);
+}
+
+.j-str {
+  color: var(--j-str);
+}
+
+.j-num {
+  color: var(--j-num);
+}
+
+.j-bool {
+  color: var(--j-bool);
+}
+
+.j-null {
+  color: var(--j-null);
+}
+
+/* 13 ── rendered markdown — HTML injected from lib/markdown.ts ───────────── */
+
+.md {
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  color: var(--text);
+}
+
+.md h1,
+.md h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: var(--tr-display);
+  color: var(--text-hi);
+}
+
+.md h1 {
+  font-size: var(--fs-lg);
+  margin: var(--sp-6) 0 var(--sp-4);
+}
+
+.md h2 {
+  font-size: var(--fs-md);
+  margin: var(--sp-6) 0 var(--sp-4);
+}
+
+.md h3,
+.md h4 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--fs-base);
+  color: var(--text-hi);
+  margin: var(--sp-5) 0 var(--sp-3);
+}
+
+.md h1:first-child,
+.md h2:first-child,
+.md h3:first-child,
+.md h4:first-child {
+  margin-top: 0;
+}
+
+.md p {
+  margin: var(--sp-4) 0;
+  white-space: pre-wrap;
+}
+
+.md strong {
+  font-weight: 600;
+  color: var(--text-hi);
+}
+
+.md a {
+  color: var(--amber);
+  border-bottom: 1px solid var(--amber-edge);
+}
+
+.md code {
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-1);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+  padding: 1px var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--amber-dim);
+}
+
+.md pre.md-code {
+  margin: var(--sp-5) 0;
+  white-space: pre;
+}
+
+.md pre.md-code code {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  color: inherit;
+}
+
+.md ul,
+.md ol {
+  margin: var(--sp-4) 0;
+  padding-left: var(--sp-9);
+}
+
+.md li {
+  margin: var(--sp-1) 0;
+}
+
+.md blockquote {
+  margin: var(--sp-5) 0;
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-5);
+  border-left: 2px solid var(--amber-edge);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+/* The double rule: two hairlines with a 1px gap, never one thick border. */
+.md hr {
+  border: none;
+  border-top: 1px solid var(--edge-strong);
+  box-shadow: 0 2px 0 -1px var(--edge-soft);
+  margin: var(--sp-6) 0;
+}
+
+/* 14 ── staggered list reveal ────────────────────────────────────────────── */
+
+@keyframes plate-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stagger-item {
+  animation: plate-in var(--dur-4) var(--ease-out-quart) backwards;
+  animation-delay: calc(min(var(--i, 0), var(--stagger-cap)) * var(--stagger-step));
+}
+
+/* 15 ── the two sanctioned infinite animations ───────────────────────────── */
+
+/* A mechanical tick, not a breath. */
+@keyframes lamp {
+  0%,
+  55% {
+    opacity: 1;
+  }
+
+  56%,
+  100% {
+    opacity: 0.28;
+  }
+}
+
+/* The running-block conveyor. */
+@keyframes hatch-run {
+  from {
+    background-position-x: 0;
+  }
+
+  to {
+    background-position-x: 8px;
+  }
+}
+
+/* 16 ── reduced motion. The only such query in the app. ──────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

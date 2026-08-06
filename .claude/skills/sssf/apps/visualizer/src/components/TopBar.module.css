@@ -1,0 +1,134 @@
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  height: 56px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-6);
+  padding-inline: var(--sp-8);
+  background-color: var(--surface-2);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+  /* The double rule: two hairlines with a 1px gap. */
+  border-bottom: 1px solid var(--edge-strong);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    0 2px 0 -1px var(--edge-soft);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
+.mark {
+  flex: none;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-stamp);
+  text-transform: uppercase;
+  letter-spacing: var(--tr-stamp);
+  color: var(--text-hi);
+  white-space: nowrap;
+}
+
+.rule {
+  width: 1px;
+  height: 20px;
+  background: var(--edge);
+  flex: none;
+}
+
+.crumbs {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.sep {
+  color: var(--text-ghost);
+  flex: none;
+}
+
+.crumb {
+  color: var(--text-dim);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.crumb:hover {
+  color: var(--text-hi);
+}
+
+.current {
+  color: var(--amber);
+  font-weight: 500;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+}
+
+.keycap {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--dur-2) var(--ease-out-quart);
+}
+
+.keycap:hover {
+  color: var(--text);
+}
+
+.docs {
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.docs:hover,
+.docsActive {
+  color: var(--amber);
+}
+
+/* The wordmark folds to two lines before it ever truncates. */
+@media (width <= 1000px) {
+  .wordmark {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+  }
+}
+
+@media (width <= 720px) {
+  .bar {
+    padding-inline: var(--sp-5);
+    gap: var(--sp-5);
+  }
+
+  .wordmark {
+    display: none;
+  }
+
+  .brand .rule {
+    display: none;
+  }
+}

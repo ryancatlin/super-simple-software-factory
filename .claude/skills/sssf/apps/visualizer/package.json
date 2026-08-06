@@ -8,22 +8,26 @@
     "dev": "vite",
     "server": "bun run server/index.ts",
     "dev:all": "bun run server/index.ts & vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "bun run server/index.ts",
-    "typecheck": "vue-tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "oxlint ."
   },
   "dependencies": {
-    "@fontsource/play": "^5.3.0",
-    "lucide-vue-next": "^1.0.0",
-    "vue": "^3.5.13"
+    "@fontsource/archivo": "^5.2.5",
+    "@fontsource/ibm-plex-mono": "^5.2.5",
+    "@fontsource/ibm-plex-sans": "^5.2.5",
+    "lucide-react": "^0.545.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@types/bun": "^1.1.14",
-    "@vitejs/plugin-vue": "^6",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5",
     "oxlint": "^1",
     "typescript": "^5.7.2",
-    "vite": "^7",
-    "vue-tsc": "^3"
+    "vite": "^7"
   }
 }

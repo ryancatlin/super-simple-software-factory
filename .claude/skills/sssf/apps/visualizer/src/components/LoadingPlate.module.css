@@ -1,0 +1,27 @@
+.plate {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-7) var(--sp-8);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 var(--sp-8);
+  background-color: var(--surface-1);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.label {
+  color: var(--text-faint);
+}

@@ -1,0 +1,19 @@
+.faint {
+  color: var(--text-faint);
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+.amber {
+  color: var(--amber);
+}
+
+.pass {
+  color: var(--pass);
+}
+
+.fail {
+  color: var(--fail);
+}

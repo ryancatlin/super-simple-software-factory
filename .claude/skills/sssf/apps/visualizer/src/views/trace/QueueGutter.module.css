@@ -1,0 +1,95 @@
+/* The queue gutter — phases that exist but have no time yet. */
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  justify-content: center;
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-5);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+  border-left: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  height: 22px;
+  min-width: 0;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 1px dashed var(--edge-strong);
+  border-radius: var(--r-2);
+  color: var(--text-ghost);
+  font-size: var(--fs-micro);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease-out-quart);
+}
+
+.chip:hover {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+.selected {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  color: var(--text);
+}
+
+.glyph {
+  flex: none;
+  line-height: 1;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── the ≤1280px layout: a wrap strip under the waterfall ─────────────────── */
+
+.strip {
+  display: none;
+  align-items: flex-start;
+  gap: var(--sp-5);
+  margin-top: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-3);
+}
+
+.stripLabel {
+  flex: none;
+  padding-top: var(--sp-2);
+}
+
+.stripChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.stripChips .chip {
+  width: auto;
+  max-width: 240px;
+}
+
+@media (max-width: 1280px) {
+  .cell {
+    display: none;
+  }
+
+  .strip {
+    display: flex;
+  }
+}

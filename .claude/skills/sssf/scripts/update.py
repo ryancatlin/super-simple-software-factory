@@ -50,6 +50,10 @@ USER_OWNED = (
     ".env",
 )
 
+# Never copied into the skill copy, so never pruned from it either — build
+# output and caches are the project's own, not the skill's to delete.
+SKILL_SKIP = ("__pycache__", "node_modules", "dist")
+
 
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -234,6 +238,8 @@ def update_tree(skill: Path, root: Path, manifest: dict, dry: bool,
     elif skill_dest.is_dir():
         _refresh_skill(skill, skill_dest, ".claude/skills/sssf",
                        files, report, dry)
+        _prune_skill(skill, skill_dest, ".claude/skills/sssf",
+                     files, report, dry)
     else:
         if not dry:
             skill_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -252,7 +258,8 @@ def update_tree(skill: Path, root: Path, manifest: dict, dry: bool,
         report["added"].append(".claude/skills/sssf/ (full skill copy)")
 
     # Files recorded but no longer shipped: left in place, reported.
-    # (Skill-copy files are exempt — they are always fully refreshed.)
+    # (Skill-copy files are exempt — _prune_skill already deleted the ones
+    # the source no longer ships and dropped them from the manifest.)
     shipped = set()
     for src_rel, dest_rel in mappings:
         src = template / src_rel
@@ -278,7 +285,7 @@ def _refresh_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
     exists in every agent's prompt_engineering/).
     """
     for child in sorted(src_dir.iterdir()):
-        if child.name in ("__pycache__", "node_modules", "dist"):
+        if child.name in SKILL_SKIP:
             continue
         rel = f"{rel_prefix}/{child.name}"
         dest = dest_dir / child.name
@@ -292,6 +299,39 @@ def _refresh_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
                 shutil.copy2(child, dest)
             files[rel] = sha256(child)
             report["refreshed"].append(rel)
+
+
+def _prune_skill(src_dir: Path, dest_dir: Path, rel_prefix: str,
+                 files: dict, report: dict, dry: bool) -> None:
+    """Delete skill-copy files the source skill no longer ships.
+
+    The skill copy is a mirror, not an accretion: a file dropped upstream
+    (a Vue component replaced by React, a retired script) must not linger in
+    the target repo where it would still be read, imported, or executed.
+    Only ever called with dest_dir inside .claude/skills/sssf — nothing
+    outside the skill copy is a candidate for deletion.
+    """
+    if not dest_dir.is_dir() or dest_dir.is_symlink():
+        return
+    for child in sorted(dest_dir.iterdir()):
+        if child.name in SKILL_SKIP:
+            continue
+        rel = f"{rel_prefix}/{child.name}"
+        src = src_dir / child.name
+        if child.is_symlink():
+            # A symlink is never something the refresh wrote; leave it alone.
+            continue
+        if child.is_dir():
+            _prune_skill(src, child, rel, files, report, dry)
+            if not src.is_dir() and not dry and not any(child.iterdir()):
+                child.rmdir()
+            continue
+        if src.is_file():
+            continue
+        if not dry:
+            child.unlink()
+        files.pop(rel, None)
+        report["removed"].append(rel)
 
 
 def ensure_gitignore(root: Path, report: dict, dry: bool) -> None:
@@ -337,7 +377,8 @@ def main() -> int:
         return 2
 
     manifest = load_manifest(root)
-    report = {"refreshed": [], "kept": [], "added": [], "orphaned": []}
+    report = {"refreshed": [], "kept": [], "added": [], "orphaned": [],
+              "removed": []}
 
     if args.dry_run:
         print(f"[update] DRY RUN against {root}")
@@ -379,6 +420,10 @@ def main() -> int:
     print(f"  kept (your version): {len(report['kept'])}")
     for x in report["kept"]:
         print(f"    = {x}")
+    if report["removed"]:
+        print(f"  removed (no longer in the skill): {len(report['removed'])}")
+        for x in report["removed"]:
+            print(f"    x {x}")
     if report["orphaned"]:
         print(f"  no longer shipped, left in place: {len(report['orphaned'])}")
         for x in report["orphaned"]:

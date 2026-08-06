@@ -1,0 +1,101 @@
+/* The time axis — 40px of engraved rule above the lanes. */
+
+.axis {
+  position: relative;
+  height: 40px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--edge-strong);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    0 2px 0 -1px var(--edge-soft);
+  overflow: hidden;
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+}
+
+.label {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--fs-stamp);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.label.atStart {
+  transform: none;
+  padding-left: var(--sp-2);
+}
+
+.label.atEnd {
+  transform: translateX(-100%);
+  padding-right: var(--sp-2);
+}
+
+/* A 6px milled riser at the tick's true position. */
+.mark {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 6px;
+  background: var(--edge-strong);
+}
+
+.break {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--surface-0);
+  background-image:
+    linear-gradient(45deg, transparent calc(50% - 1px), var(--edge-strong) 50%, transparent calc(50% + 1px)),
+    var(--tex-dots);
+  background-size:
+    100% 14px,
+    var(--tex-dots-size);
+  border-left: 1px solid var(--edge-strong);
+  border-right: 1px solid var(--edge-strong);
+  overflow: hidden;
+}
+
+/* Stood on end — the band is 2.2% of the track and never wider than a word. */
+.breakLabel {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: var(--text-ghost);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+/* The live readout rides the NOW line. */
+.now {
+  position: absolute;
+  top: var(--sp-2);
+  transform: translateX(-50%);
+  padding: 1px var(--sp-3);
+  background: var(--amber);
+  color: var(--surface-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-stamp);
+  border-radius: var(--r-1);
+  white-space: nowrap;
+  z-index: var(--z-nowline);
+}
+
+.now.atStart {
+  transform: none;
+}
+
+.now.atEnd {
+  transform: translateX(-100%);
+}

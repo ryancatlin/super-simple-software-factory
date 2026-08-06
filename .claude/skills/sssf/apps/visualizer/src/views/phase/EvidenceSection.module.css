@@ -1,0 +1,84 @@
+.flow {
+  margin-bottom: var(--sp-6);
+}
+
+.name {
+  margin-bottom: var(--sp-4);
+  color: var(--amber);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+.thumb {
+  display: block;
+  padding: var(--sp-3);
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+  color: var(--text-dim);
+  transition: border-color var(--dur-2) var(--ease-out-quart);
+}
+
+.thumb:hover {
+  border-color: var(--edge-strong);
+  color: var(--text);
+}
+
+/* A diff image IS a finding — give it the failure edge gates use. */
+.diff {
+  border-left: 3px solid var(--fail);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  border-radius: var(--r-1);
+  /* Screenshots are of white pages; the backing is the artefact's own paper,
+     not a theme surface. Anything darker reads as part of the shot. */
+  background: #ffffff;
+}
+
+.cap {
+  display: block;
+  margin-top: var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+.size {
+  color: var(--text-faint);
+}
+
+.files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.file {
+  padding: var(--sp-1) var(--sp-4);
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text);
+  transition: border-color var(--dur-2) var(--ease-out-quart);
+}
+
+.file:hover {
+  border-color: var(--amber-edge);
+  color: var(--amber);
+}

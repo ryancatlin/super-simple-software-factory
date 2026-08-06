@@ -1,0 +1,26 @@
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.label {
+  line-height: 1;
+}
+
+.value {
+  font-size: var(--fs-md);
+  line-height: var(--lh-tight);
+  color: var(--text-hi);
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+}

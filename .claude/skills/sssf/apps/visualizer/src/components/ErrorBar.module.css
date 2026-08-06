@@ -1,0 +1,58 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  position: relative;
+  width: 100%;
+  padding: var(--sp-4) var(--sp-6);
+  padding-left: calc(6px + var(--sp-6));
+  background: var(--fail-wash);
+  border-block: 1px solid var(--fail);
+  border-radius: var(--r-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--fail-bright);
+  overflow: hidden;
+}
+
+.sticky {
+  position: sticky;
+  top: 56px;
+  z-index: var(--z-sticky);
+}
+
+.hatch {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background-color: var(--fail);
+  background-image: var(--tex-hatch-fail);
+}
+
+.icon {
+  flex: none;
+}
+
+.prefix {
+  color: var(--fail);
+  flex: none;
+}
+
+.dot {
+  color: var(--text-ghost);
+  flex: none;
+}
+
+.message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--text-dim);
+  flex: none;
+}

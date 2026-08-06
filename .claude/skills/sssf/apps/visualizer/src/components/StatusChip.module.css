@@ -1,0 +1,60 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 2px var(--sp-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-2);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--fs-micro);
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: var(--tr-stamp);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.icon {
+  flex: none;
+}
+
+.success {
+  color: var(--pass);
+  border-color: var(--pass);
+  background: var(--pass-wash);
+}
+
+.fail {
+  color: var(--fail);
+  border-color: var(--fail);
+  background: var(--fail-wash);
+}
+
+.running {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: var(--amber-wash);
+}
+
+.running .icon {
+  animation: spin 1.1s linear infinite;
+}
+
+.queued {
+  color: var(--text-dim);
+  border-style: dashed;
+  background: none;
+}
+
+.compact {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

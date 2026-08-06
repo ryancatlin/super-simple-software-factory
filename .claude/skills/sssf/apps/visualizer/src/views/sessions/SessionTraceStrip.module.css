@@ -1,0 +1,114 @@
+/* Aligned under the request column: status block + gutter + ident column. */
+.strip {
+  padding-left: calc(10px + var(--sp-6) + 200px + var(--sp-6));
+}
+
+/* ── axis ───────────────────────────────────────────────────────────────── */
+
+.axis {
+  display: flex;
+  align-items: flex-end;
+  height: 16px;
+}
+
+.scale {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.tick {
+  position: absolute;
+  bottom: 2px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--fs-stamp);
+  line-height: 1;
+  color: var(--text-ghost);
+  white-space: nowrap;
+}
+
+/* The zero tick has nothing to its left to centre against. */
+.first {
+  transform: none;
+}
+
+/* ── lanes ──────────────────────────────────────────────────────────────── */
+
+.lane {
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+
+.label {
+  flex: none;
+  width: 72px;
+  padding-right: var(--sp-4);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+/* Machined marks, not bubbles. */
+.dot {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-1);
+  transform: translate(-50%, -50%);
+}
+
+/* The live head of the stream. A 1px amber ring, never a glow — the fill stays
+   the event-type colour every other mark on the track is read by, so the head
+   gains liveness without losing which event it is. */
+.latest {
+  width: 9px;
+  height: 9px;
+  box-shadow:
+    0 0 0 1px var(--amber),
+    0 0 0 2px var(--surface-0);
+  animation: lamp 1s steps(1, end) infinite;
+}
+
+/* ── overflow + idle ────────────────────────────────────────────────────── */
+
+.more {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  padding-left: 72px;
+}
+
+/* Dead space earns the dot matrix. The stamp keeps the --text-faint AA floor
+   rather than the spec's --text-ghost, which fails contrast on real text. */
+.idle {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-left: calc(10px + var(--sp-6) + 200px + var(--sp-6));
+  padding-left: var(--sp-4);
+  background-image: var(--tex-dots);
+  background-size: var(--tex-dots-size);
+}
+
+/* ── ≤860px: the row is identity only. A 60px timeline is a lie, not a hint. */
+
+@media (width <= 860px) {
+  .strip,
+  .idle {
+    display: none;
+  }
+}

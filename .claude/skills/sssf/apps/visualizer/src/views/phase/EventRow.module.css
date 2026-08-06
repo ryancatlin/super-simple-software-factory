@@ -1,0 +1,125 @@
+.event {
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.selected .row {
+  background: var(--surface-4);
+  box-shadow: inset 2px 0 0 var(--amber);
+}
+
+.row {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: none;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-2) var(--ease-out-quart);
+}
+
+.row:hover,
+.open {
+  background: var(--surface-2);
+}
+
+.time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+/* Fixed type column: the labels line up into a readable left rule. */
+.type {
+  flex: none;
+  width: 130px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.label {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.failed {
+  color: var(--fail);
+}
+
+.extra {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+
+.payload {
+  margin: var(--sp-3) 0 var(--sp-5);
+  padding: var(--sp-5);
+  /* Engraved: a payload is data you read, not chrome you click. */
+  background: var(--surface-3);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+}
+
+.meta {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: baseline;
+  margin-bottom: var(--sp-4);
+}
+
+.tool {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--lane-steel);
+}
+
+.failedWord {
+  color: var(--fail);
+}
+
+.h4 {
+  margin: var(--sp-5) 0 var(--sp-3);
+  color: var(--text-faint);
+}
+
+.h4:first-of-type {
+  margin-top: 0;
+}
+
+.result {
+  max-height: 42vh;
+  overflow: auto;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.spaced {
+  margin-top: var(--sp-4);
+}
+
+.faint {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+/* Nested inside the payload well the JSON blocks share its fill — a stronger
+   hairline keeps each one reading as its own cut. */
+.payload pre {
+  border-color: var(--edge);
+}

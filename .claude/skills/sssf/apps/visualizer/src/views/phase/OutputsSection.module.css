@@ -1,0 +1,38 @@
+.faint {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+.output {
+  margin-bottom: var(--sp-6);
+}
+
+.line {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+
+.type {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* The verdict carries a glyph as well as a colour, always. */
+.valid {
+  margin-left: auto;
+}
+
+.pass {
+  color: var(--pass);
+}
+
+.fail {
+  color: var(--fail);
+}

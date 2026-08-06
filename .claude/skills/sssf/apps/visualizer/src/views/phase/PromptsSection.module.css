@@ -1,0 +1,127 @@
+.faint {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+.panel {
+  margin-bottom: var(--sp-4);
+  background: var(--surface-1);
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--edge-shadow);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  width: 100%;
+  padding: var(--sp-4) var(--sp-5);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--dur-2) var(--ease-out-quart);
+}
+
+.head:hover {
+  background: var(--surface-2);
+}
+
+.chevron {
+  flex: none;
+  align-self: center;
+  color: var(--text-ghost);
+  transition: transform var(--dur-2) var(--ease-mech);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+}
+
+.lines {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+/* The mechanical drawer: only the grid row track moves. Height is never
+   animated, and the content never reflows during the transition. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--dur-3) var(--ease-out-quart),
+    visibility 0s linear var(--dur-3);
+}
+
+.collapseOpen {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--dur-3) var(--ease-out-quart),
+    visibility 0s;
+}
+
+.collapseInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.body {
+  padding: var(--sp-5);
+  border-top: 1px solid var(--edge-soft);
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.tools {
+  display: flex;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+}
+
+.tool {
+  padding: var(--sp-1) var(--sp-5);
+  background: none;
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-2);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    color var(--dur-2) var(--ease-out-quart),
+    background-color var(--dur-2) var(--ease-out-quart);
+}
+
+.tool:hover {
+  color: var(--text);
+}
+
+.toolActive {
+  color: var(--amber);
+  border-color: var(--amber-edge);
+  background: var(--amber-wash);
+}
+
+/* The raw view is the file itself — no second well inside the panel. */
+.raw {
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--text-dim);
+}

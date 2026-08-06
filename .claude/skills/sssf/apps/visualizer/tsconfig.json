@@ -16,8 +16,7 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
-    "jsx": "preserve",
-    "jsxImportSource": "vue",
+    "jsx": "react-jsx",
     "noEmit": true,
 
     "baseUrl": ".",
@@ -26,5 +25,11 @@
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["shared/**/*.ts", "server/**/*.ts", "src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+  "include": [
+    "shared/**/*.ts",
+    "server/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "vite.config.ts"
+  ]
 }

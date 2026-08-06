@@ -1,0 +1,145 @@
+/**
+ * Machine Shop tokens — DESIGN_SPEC.md §2.
+ *
+ * Authored in OKLCH; the hex in each comment is the resolved sRGB value (use it
+ * only where a hex string is genuinely required, e.g. lane fallbacks that feed
+ * hexAlpha()). Contrast ratios are measured against --surface-1.
+ */
+
+:root {
+  /* ── SURFACES ─ warm charcoal, hue 75°, chroma ≤ 0.009. Never blue-black. ── */
+  --surface-0: oklch(0.155 0.006 75); /* #0e0c09  page void                          */
+  --surface-1: oklch(0.196 0.007 75); /* #171512  default panel / plate              */
+  --surface-2: oklch(0.238 0.008 75); /* #211e1b  raised: head-plate, table header   */
+  --surface-3: oklch(0.132 0.006 75); /* #090706  engraved well: pre, JSON, troughs  */
+  --surface-4: oklch(0.276 0.009 75); /* #2b2723  hover / pressed / selected row     */
+  --surface-sunk: oklch(0.108 0.005 75); /* #060504  deepest — palette scrim base    */
+
+  /* ── TEXT TIERS ── */
+  --text-hi: oklch(0.955 0.006 85); /* #f2f0ec  16.0:1  headings, key values         */
+  --text: oklch(0.885 0.006 85); /* #dbd9d5  12.9:1  body                            */
+  --text-dim: oklch(0.715 0.008 82); /* #a5a39d   7.2:1  secondary, meta             */
+  --text-faint: oklch(0.635 0.008 80); /* #8d8a85   5.3:1  stamps, units — AA floor  */
+  --text-ghost: oklch(0.47 0.007 78); /* #5d5a56   2.7:1  NON-TEXT ONLY (glyph+label)*/
+
+  /* ── ACCENT ─ amber phosphor. The only accent. ── */
+  --amber: oklch(0.8 0.158 72); /* #fbab2f  9.5:1                                    */
+  --amber-bright: oklch(0.86 0.12 85); /* #f5cb70 12.1:1  hover / live peak          */
+  --amber-dim: oklch(0.66 0.125 70); /* #c2832d  5.7:1  pressed / secondary text     */
+  --amber-wash: oklch(0.8 0.158 72 / 0.1); /* selected-row fill                      */
+  --amber-edge: oklch(0.8 0.158 72 / 0.42); /* accent hairline                       */
+
+  /* ── SEMANTIC ─ muted, desaturated. Verdicts only, never decoration. ── */
+  --pass: oklch(0.72 0.115 148); /* #70b87b  7.7:1                                   */
+  --pass-wash: oklch(0.72 0.115 148 / 0.1);
+  --fail: oklch(0.64 0.155 27); /* #da6057  5.0:1                                    */
+  --fail-bright: oklch(0.7 0.16 27); /* #f27166  6.4:1  on-hover / hatch             */
+  --fail-wash: oklch(0.64 0.155 27 / 0.1);
+  --verdict: oklch(0.73 0.145 52); /* #ee8b49  7.3:1  machinery-ok, verdict-fail     */
+  --verdict-wash: oklch(0.73 0.145 52 / 0.1);
+
+  /* ── LANE FALLBACKS ─ hex, because they feed hexAlpha() and inline styles. ── */
+  --lane-amber: #f3a52b; /* engineer lane (fixed)                             8.9:1 */
+  --lane-steel: #48bfbf; /* code lane (fixed)                                 8.2:1 */
+  --lane-orchid: #b094e2; /*                                                  7.1:1 */
+  --lane-oxide: #7ec180; /*                                                   8.5:1 */
+  --lane-slate: #77b9e8; /*                                                   8.6:1 */
+  --lane-rust: #e47c75; /*                                                    6.5:1 */
+
+  /* ── EDGES ─ machined lines. No blur, ever. ── */
+  --edge: oklch(0.32 0.008 75); /* #35322e default hairline                          */
+  --edge-soft: oklch(0.268 0.007 75); /* #282522 quiet divider                       */
+  --edge-strong: oklch(0.4 0.009 75); /* #4b4742 structural rule                     */
+  --edge-light: oklch(0.48 0.01 80 / 0.62); /* top chamfer highlight                 */
+  --edge-light-faint: oklch(0.48 0.01 80 / 0.24); /* well bottom highlight           */
+  --edge-shadow: oklch(0.09 0.004 75 / 0.8); /* bottom chamfer shadow                */
+  --focus: var(--amber); /* focus ring colour                                        */
+
+  /* ── JSON TOKENS ─ remap of highlight.ts's .j-* classes ── */
+  --j-key: oklch(0.78 0.1 88); /* #d2b46a  brass  */
+  --j-str: oklch(0.76 0.09 150); /* #87c293  oxide  */
+  --j-num: oklch(0.82 0.14 72); /* #fcb452  amber  */
+  --j-bool: oklch(0.76 0.085 215); /* #6dbfd3  steel  */
+  --j-null: oklch(0.66 0.1 20); /* #c87979  rust   */
+
+  /* ── SPACING ─ 4px base. Use tokens; no raw px in component CSS except
+        hairlines (1px), tick marks, and the fixed rail widths named in §5. ── */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-8: 24px;
+  --sp-9: 32px;
+  --sp-10: 40px;
+  --sp-11: 48px;
+  --sp-12: 64px;
+
+  /* ── RADII ─ chamfers. --r-3 is the hard ceiling. ── */
+  --r-1: 1px; /* troughs, tick marks, fills   */
+  --r-2: 2px; /* blocks, chips, inputs        */
+  --r-3: 3px; /* plates, panels, palette      */
+  /* there is no --r-4. Pills do not exist in this app. */
+
+  /* ── TYPE ─ fluid. Prose/data floor is 14px; only --fs-stamp goes below. ── */
+  --fs-stamp: clamp(10.5px, 0.6rem + 0.08vw, 11.5px); /* uppercase + tracked ONLY */
+  --fs-micro: clamp(12px, 0.7rem + 0.1vw, 13px); /* units, captions, counts      */
+  --fs-sm: clamp(13.5px, 0.78rem + 0.12vw, 15px);
+  --fs-base: clamp(15px, 0.86rem + 0.16vw, 16.5px); /* body                      */
+  --fs-md: clamp(16px, 0.92rem + 0.22vw, 18px);
+  --fs-lg: clamp(18px, 1.02rem + 0.36vw, 22px);
+  --fs-xl: clamp(22px, 1.2rem + 0.7vw, 30px);
+  --fs-2xl: clamp(28px, 1.5rem + 1.3vw, 44px);
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.3;
+  --lh-base: 1.55;
+  --lh-loose: 1.7;
+  --tr-stamp: 0.14em; /* stamped labels        */
+  --tr-display: 0.01em; /* Archivo headings    */
+  --tr-tight: -0.01em; /* --fs-xl and above    */
+
+  /* ── FONTS ── */
+  --font-display: 'Archivo', 'Archivo Fallback', sans-serif;
+  --font-body: 'IBM Plex Sans', 'IBM Plex Sans Fallback', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* ── MOTION ─ mechanical. transform + opacity only. ── */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-mech: cubic-bezier(0.2, 0.9, 0.1, 1); /* detented, slight snap */
+  --dur-1: 90ms; /* press feedback            */
+  --dur-2: 150ms; /* hover, chip state        */
+  --dur-3: 220ms; /* section open, block move */
+  --dur-4: 320ms; /* plate reveal, palette in */
+  --dur-5: 480ms; /* longest permitted        */
+  --stagger-step: 22ms; /* per-item list reveal delay */
+  --stagger-cap: 11; /* index is clamped to this     */
+
+  /* ── Z-LAYERS ── */
+  --z-base: 0;
+  --z-block: 10; /* phase blocks over gridlines     */
+  --z-nowline: 20; /* the advancing NOW rule        */
+  --z-sticky: 30; /* sticky section nav, ledger head */
+  --z-topbar: 40; /* head-plate                     */
+  --z-scrim: 60; /* palette backdrop                */
+  --z-palette: 70; /* command palette              */
+
+  /* ── TEXTURE ── */
+  --tex-dots: radial-gradient(circle at 1px 1px, oklch(0.48 0.01 80 / 0.14) 1px, transparent 0);
+  --tex-dots-size: 4px 4px;
+  /* Diagonal hatch for running blocks / axis breaks. Animate background-position-x. */
+  --tex-hatch: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    oklch(0.8 0.158 72 / 0.1) 6px 8px
+  );
+  --tex-hatch-fail: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    oklch(0.64 0.155 27 / 0.16) 6px 8px
+  );
+}

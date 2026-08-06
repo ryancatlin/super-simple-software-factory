@@ -1,0 +1,146 @@
+/* One swim lane: the rail plate on the left, the time track on the right. */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-5) var(--sp-6);
+  border-right: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge-soft);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.kind {
+  flex: none;
+  color: var(--lane);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  color: var(--lane);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model {
+  min-width: 0;
+}
+
+.meta {
+  color: var(--text-faint);
+}
+
+/* ── context gauge ────────────────────────────────────────────────────────── */
+
+.ctx {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: 190px;
+  margin-top: var(--sp-1);
+}
+
+.ctxHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.ctxLabel {
+  color: var(--text-faint);
+}
+
+.ctxPct {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+/* Engraved trough with milled graduations at 25 / 50 / 75%. */
+.ctxTrough {
+  position: relative;
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  background-color: var(--surface-3);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    var(--edge) calc(25% - 1px) 25%
+  );
+  border: 1px solid var(--edge-soft);
+  border-radius: var(--r-1);
+  box-shadow:
+    inset 0 1px 0 var(--edge-shadow),
+    inset 0 -1px 0 var(--edge-light-faint);
+}
+
+.ctxFill {
+  display: block;
+  height: 100%;
+  background: var(--lane);
+  transition: width var(--dur-3) var(--ease-out-quart);
+}
+
+/* ── track ────────────────────────────────────────────────────────────────── */
+
+.track {
+  position: relative;
+  min-height: 72px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--edge-soft);
+}
+
+.trackSelected {
+  background: color-mix(in oklab, var(--lane) 5%, transparent);
+}
+
+.gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--edge-soft);
+  pointer-events: none;
+}
+
+/* Elided idle time — dot matrix plus a chevron notch, never silent. */
+.breakBand {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: var(--surface-0);
+  background-image:
+    linear-gradient(45deg, transparent calc(50% - 1px), var(--edge-strong) 50%, transparent calc(50% + 1px)),
+    var(--tex-dots);
+  background-size:
+    100% 14px,
+    var(--tex-dots-size);
+  border-left: 1px solid var(--edge-strong);
+  border-right: 1px solid var(--edge-strong);
+}
+
+/* The name of a block too narrow to hold it, anchored to the block's own
+   midline (top 12px + half of its 48px height). */
+.floatLabel {
+  position: absolute;
+  top: 36px;
+  transform: translateY(-50%);
+  font-size: var(--fs-micro);
+  color: var(--lane);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: var(--z-block);
+}

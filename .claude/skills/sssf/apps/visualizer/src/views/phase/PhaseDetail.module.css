@@ -1,0 +1,44 @@
+.panel {
+  margin-bottom: var(--sp-9);
+}
+
+.errorWrap {
+  padding: var(--sp-5) var(--sp-6) 0;
+}
+
+/* [ index rail | sections | the tape ] */
+.body {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1.05fr) minmax(0, 1.35fr);
+  gap: var(--sp-8);
+  padding: var(--sp-6);
+}
+
+.column {
+  min-width: 0;
+}
+
+/* The events column is a keyboard container; it must not show a focus ring of
+   its own when it takes focus by click. */
+.column:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.request {
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+@media (max-width: 1100px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-7);
+  }
+}

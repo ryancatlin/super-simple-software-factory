@@ -1,0 +1,163 @@
+.faint {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+}
+
+/* Each gate is a plate with a verdict edge milled down its left side. */
+.gate {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface-1);
+  border: 1px solid var(--edge-soft);
+  border-left: 3px solid var(--edge-strong);
+  border-radius: var(--r-2);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--edge-shadow);
+}
+
+.gate.pass {
+  border-left-color: var(--pass);
+}
+
+.gate.fail {
+  border-left-color: var(--fail);
+}
+
+.line {
+  display: flex;
+  gap: var(--sp-5);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.chevron {
+  flex: none;
+  align-self: center;
+  color: var(--text-ghost);
+  transition: transform var(--dur-2) var(--ease-mech);
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.mark {
+  flex: none;
+  font-size: var(--fs-md);
+  line-height: 1;
+}
+
+.gate.pass .mark {
+  color: var(--pass);
+}
+
+.gate.fail .mark {
+  color: var(--fail);
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.time {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+}
+
+/* Drawer: the grid row track carries the motion, never a height. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--dur-3) var(--ease-out-quart),
+    visibility 0s linear var(--dur-3);
+}
+
+.collapseOpen {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--dur-3) var(--ease-out-quart),
+    visibility 0s;
+}
+
+.collapseInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.checks {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--edge-soft);
+}
+
+.check {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: var(--sp-1) 0;
+}
+
+.checkMark {
+  flex: none;
+  width: 14px;
+}
+
+.check.pass .checkMark {
+  color: var(--pass);
+}
+
+.check.fail .checkMark {
+  color: var(--fail);
+}
+
+.checkItem {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.checkNote {
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.checkBlock {
+  flex-basis: 100%;
+  margin: var(--sp-2) 0 var(--sp-3) var(--sp-8);
+  max-height: 30vh;
+  overflow: auto;
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.violations {
+  margin: var(--sp-4) 0 var(--sp-1);
+  padding-left: var(--sp-8);
+  color: var(--fail);
+  font-size: var(--fs-sm);
+}

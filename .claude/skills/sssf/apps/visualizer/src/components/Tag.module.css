@@ -1,0 +1,50 @@
+.tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 2px var(--sp-4);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-2);
+  background: var(--surface-1);
+  box-shadow:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--edge-shadow);
+  white-space: nowrap;
+}
+
+.label {
+  line-height: 1;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text);
+}
+
+.fail {
+  border-color: var(--fail);
+  background: var(--fail-wash);
+}
+
+.fail .value {
+  color: var(--fail);
+}
+
+.pass {
+  border-color: var(--pass);
+  background: var(--pass-wash);
+}
+
+.pass .value {
+  color: var(--pass);
+}
+
+.verdict {
+  border-color: var(--verdict);
+  background: var(--verdict-wash);
+}
+
+.verdict .value {
+  color: var(--verdict);
+}
