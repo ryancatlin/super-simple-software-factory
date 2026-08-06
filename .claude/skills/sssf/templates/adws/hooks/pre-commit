@@ -28,7 +28,10 @@ decl="adws/adw_data/validation/validation.yaml"
 [ -f "$decl" ] || exit 0
 grep -Eq '^enabled:[[:space:]]*true' "$decl" || exit 0
 
-exempt='^(adws/|app_docs/|docs/|specs/|requests/|\.claude/|\.github/|justfile$|[^/]+\.(md|txt)$|\.[^/]+$)'
+# Lint/test tooling config is a chore surface like the justfile. Named tools
+# only: next.config, tailwind, postcss and friends SHAPE the shipped app, so
+# they stay behind the validated chains.
+exempt='^(adws/|app_docs/|docs/|specs/|requests/|\.claude/|\.github/|justfile$|(eslint|prettier|stylelint|vitest|jest|playwright|commitlint|lint-staged)\.config\.[a-z]+$|[^/]+\.(md|txt)$|\.[^/]+$)'
 blocked=$(git diff --cached --name-only | grep -Ev "$exempt" || true)
 [ -z "$blocked" ] && exit 0
 
