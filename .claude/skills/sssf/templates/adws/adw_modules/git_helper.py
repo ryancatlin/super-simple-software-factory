@@ -89,8 +89,15 @@ def commit_paths(message: str, paths: list[str]) -> str:
 
 
 def changed_files() -> list[str]:
-    out = _git("status", "--porcelain")
-    return [line[3:] for line in out.splitlines() if line]
+    """Paths with uncommitted changes, status columns sliced off.
+
+    Raw subprocess output, not _git — its strip() eats the first line's
+    leading status column (` M path` becomes `M path`), and slicing [3:]
+    would then eat the path's first character too.
+    """
+    result = subprocess.run(["git", "status", "--porcelain"],
+                            capture_output=True, text=True)
+    return [line[3:] for line in result.stdout.splitlines() if line.strip()]
 
 
 # ── diff plumbing (composed into a ChangeSet by documentation.py) ────────────

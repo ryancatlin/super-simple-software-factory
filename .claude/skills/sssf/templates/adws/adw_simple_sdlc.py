@@ -41,17 +41,25 @@ adws/adw_data/validation/ — see cookbooks/setup_validation.md). Without a
 declaration the chain stays useful and skips VISIBLY: a `validate_skipped`
 phase in the trace, never a silent green. It is one-shot here — a red verdict
 stops the commit and the working tree holds the attempt; `just build-validate`
-is the fix-until-green shape.
+is the fix-until-green shape, and it commits the tree once it is green.
 
 The code commit lands after verification, not straight after the build: fixes
 and revisions are part of the same work product, and red code has no business
 on the branch. A run that fails verification therefore leaves the plan
 committed and the working tree dirty — the spec is a real artifact either way,
-and the unfinished code stays where the engineer can see it.
+and the unfinished code stays where the engineer can see it. `build-validate`
+is how that attempt is finished and landed; this chain REFUSES to start on a
+dirty tree, because its whole-tree commits would otherwise carry someone
+else's work under an agent's message.
 
-The documenter measures against the commit this run STARTED from, not against
-`main`, because by then the run has moved `main` itself. That baseline is
-pinned before the first commit phase and printed in the request phase.
+The plan commit is the exception: the planner is write-scoped to `specs/`, so
+that commit names its pathspec and takes only what the planner wrote.
+
+The documenter measures against the commit this SESSION started from, not
+against `main`, because by then the run has moved `main` itself. That baseline
+is pinned on the session's first invocation and reused by every re-invocation
+of the same adw_id, so a session run in several rounds is documented whole.
+The request phase prints it, and whether it was pinned or resumed.
 """
 
 import argparse
@@ -74,12 +82,47 @@ MAX_REVISION_LOOPS = 2
 # registry only, never the app (permissions.enforce rolls back anything else).
 VALIDATION_WRITES = ["adws/adw_data/validation/"]
 
+# The planner's only repo-visible output is the spec copy — plan.md itself
+# lands in the gitignored session handoff, which every agent may write. Bounding
+# it here is what makes commit_plan's pathspec authoritative.
+PLAN_WRITES = ["specs/"]
+
 DOCUMENT_NOTES = ("Read diff_path in full before writing. Document only what the "
                   "diff shows, then copy the write-up into app_docs/ as your task "
                   "describes.")
 
 
+def dirty_tree_refusal() -> str:
+    """The refusal to print when the tree is not this run's to commit, else "".
+
+    Two of this chain's three commits stage the whole tree, so a path that was
+    already dirty lands in whichever fires first, under another agent's message
+    — observed live: a spec commit that swallowed the previous attempt's
+    application code. Never stash: an engineer's uncommitted work is not the
+    factory's to move somewhere they cannot see it.
+    """
+    if not (git_helper.is_repo() and git_helper.is_dirty()):
+        return ""
+    paths = git_helper.changed_files()
+    listed = "\n".join(f"  - {p}" for p in paths[:5])
+    extra = f"\n  - ... and {len(paths) - 5} more" if len(paths) > 5 else ""
+    return (f"refusing to start: {len(paths)} uncommitted path(s) in the working "
+            f"tree\n{listed}{extra}\n\n"
+            "This chain commits the whole tree, so that work would land inside "
+            "one of its commits, described by an agent that never wrote it. "
+            "Finish or clear it first:\n"
+            '  just build-validate "<what is still missing>"   # finishes an '
+            "unfinished attempt and commits it on green\n"
+            "  git commit / git restore                       # land or drop it "
+            "yourself\n"
+            "Do not stash — a stashed attempt is invisible to the next run.")
+
+
 def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw_id: str | None = None) -> int:
+    refusal = dirty_tree_refusal()
+    if refusal:
+        print(refusal, file=sys.stderr)      # before any session exists to record
+        return 2
     cfg = agents.load_config(config)
     # The declaration this run starts under decides whether validation gates
     # the commit — and whether the roster must hold a validator. Pinned here:
@@ -93,12 +136,24 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     # setup-validation) lets its git phases through. Chains without the gate,
     # and hand commits, are blocked by that hook once validation is enabled.
     os.environ["SSSF_VALIDATED_CHAIN"] = run.adw_id
-    baseline = git_helper.rev("HEAD")     # pinned before this run commits anything
+    # Pinned before this run commits anything, and stored against the SESSION:
+    # a re-invoked adw_id reuses the first invocation's baseline, so the
+    # documenter still sees the whole session's work rather than the last round.
+    baseline, pinned = session.baseline(run, git_helper.rev("HEAD"))
 
-    def commit(ph, envelope) -> None:
-        """Commit what the preceding phase produced, in that agent's own words."""
+    def commit(ph, envelope, paths: list[str] | None = None) -> None:
+        """Commit what the preceding phase produced, in that agent's own words.
+
+        `paths` scopes the commit to a write-restricted phase's own surface.
+        permissions.enforce has already proven the agent touched nothing else,
+        which makes the pathspec the authoritative file list — anything else
+        dirty is not this phase's to sweep in. Unscoped, the whole tree is the
+        work product.
+        """
         message = envelope.commit_message or f"sssf({run.adw_id}): {envelope.summary}"
-        ph.log(sha=git_helper.commit_all(message), message=message)
+        sha = (git_helper.commit_paths(message, paths) if paths
+               else git_helper.commit_all(message))
+        ph.log(sha=sha, message=message)
 
     def record(ph, result) -> None:
         """Log a deterministic block's verdict — the same shape every ADW uses."""
@@ -108,17 +163,20 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
 
     with run.phase(PhaseParams(name="request", kind="engineer", owner=run.engineer,
                                description="Capture the incoming ask")) as ph:
-        ph.log(input=prompt, baseline=git_helper.short_sha(baseline))
+        ph.log(input=prompt,
+               baseline=f"{git_helper.short_sha(baseline)} "
+                        f"{'pinned' if pinned else 'resumed'}")
 
     with run.phase(PhaseParams(name="plan", kind="agent", owner="planner",
                                description="Turn the request into an implementable plan")) as ph:
         plan = ph.call(AgentCall(output_type=PlanOutput, prompt=prompt,
+                                 writes=PLAN_WRITES,
                                  gates=[gates.artifacts_exist, gates.files_non_empty,
                                         gates.criteria_present]))
 
     with run.phase(PhaseParams(name="commit_plan", kind="code", owner="git",
                                description="Put the spec on record before any code exists to blur it")) as ph:
-        commit(ph, plan)
+        commit(ph, plan, PLAN_WRITES)
 
     with run.phase(PhaseParams(name="build", kind="agent", owner="builder",
                                description="Implement the plan exactly")) as ph:
@@ -303,7 +361,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     return run.finish(accepted=verified and validated,
                       reason=("the suite or the review never came back clean" if not verified
                               else (validation_reason or "declared validation did not come back green")
-                              + " — nothing was committed; the working tree holds the attempt"))
+                              + " — the code was not committed; the working tree holds the "
+                                "attempt, and `just build-validate` finishes and lands it"))
 
 
 if __name__ == "__main__":

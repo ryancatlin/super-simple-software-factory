@@ -73,7 +73,7 @@ setup-validation *ARGS:
 validate *ARGS:
     uv run adws/adw_validate.py --config {{config}} "$@"
 
-# build, then prove the running app behaves, bounded fix loop: just build-validate "..."
+# build, prove the running app behaves, commit on green: just build-validate "..."
 build-validate *ARGS:
     uv run adws/adw_build_validate.py --config {{config}} "$@"
 

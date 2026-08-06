@@ -35,7 +35,7 @@ export const GROUPS: Group[] = [
       { cmd: 'just plan', what: 'Plan only — a spec the builder could implement without questions.', example: 'just plan "add a /health endpoint"' },
       { cmd: 'just plan-build', what: 'Planner, then builder, then commit.', example: 'just plan-build "add a /health endpoint"' },
       { cmd: 'just sdlc', what: 'Plan, build, test, commit.', example: 'just sdlc "add a /health endpoint"' },
-      { cmd: 'just simple-sdlc', what: 'The full chain: review, docs, and — when validation is enabled — every acceptance criterion must map to a probe and prove itself by exit code against the shippable build before the code commits.', example: 'just simple-sdlc "add a /health endpoint"' },
+      { cmd: 'just simple-sdlc', what: 'The full chain: review, docs, and — when validation is enabled — every acceptance criterion must map to a probe and prove itself by exit code against the shippable build before the code commits. Refuses to start on a dirty tree; finish that attempt with just build-validate first.', example: 'just simple-sdlc "add a /health endpoint"' },
     ],
   },
   {
@@ -45,7 +45,7 @@ export const GROUPS: Group[] = [
     commands: [
       { cmd: 'just setup-validation', what: 'The factory builds this project’s validation itself — scout, declare, prove green, commit. The setup builder is mechanically limited to the declaration.', example: 'just setup-validation "the journeys that matter are ..."' },
       { cmd: 'just validate', what: 'Provision, capture evidence, rule on it, teardown. Green only when the evidence supports it.', example: 'just validate "the home page renders"' },
-      { cmd: 'just build-validate', what: 'Build a change, then prove the running app still behaves — bounded fix loop on red.', example: 'just build-validate "dedupe the double lookup; journeys stay green"' },
+      { cmd: 'just build-validate', what: 'Build a change, then prove the running app still behaves — bounded fix loop on red, and the validated tree is committed on green. Also how an attempt another run left uncommitted gets finished and landed.', example: 'just build-validate "dedupe the double lookup; journeys stay green"' },
       { cmd: 'just bless', what: 'Accept a run’s screenshots as the visual baselines for future drift diffs.', example: 'just bless <adw_id>' },
       { cmd: 'just evidence', what: 'Open a run’s validation evidence on disk: screenshots, diffs, OCR sidecars.', example: 'just evidence <adw_id>' },
       { cmd: 'just flows', what: 'The catalogue — floor journeys, request probes, and shared lib steps.' },

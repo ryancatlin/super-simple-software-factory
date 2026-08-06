@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   engineer      TEXT,
   started_at    TEXT, ended_at TEXT,
   total_tokens  INTEGER DEFAULT 0, total_cost REAL DEFAULT 0,
-  archived      INTEGER DEFAULT 0   -- review triage, set by the UI; never by a run
+  archived      INTEGER DEFAULT 0,  -- review triage, set by the UI; never by a run
+  baseline      TEXT                -- commit this session started from, pinned once
 );
 CREATE TABLE IF NOT EXISTS phases (
   phase_id      TEXT PRIMARY KEY,
@@ -96,7 +97,8 @@ MIGRATIONS = [("agent_sessions", "color", "TEXT"),
               ("sessions", "adw_name", "TEXT"),
               ("agent_sessions", "context_tokens", "INTEGER"),
               ("agent_sessions", "context_window", "INTEGER"),
-              ("sessions", "archived", "INTEGER DEFAULT 0")]
+              ("sessions", "archived", "INTEGER DEFAULT 0"),
+              ("sessions", "baseline", "TEXT")]
 
 
 class Tracer:
@@ -156,6 +158,16 @@ class Tracer:
     def session_request(self, adw_id: str, request: str) -> None:
         self.conn.execute("UPDATE sessions SET request=? WHERE adw_id=?",
                           (request[:500], adw_id))
+
+    def session_baseline(self, adw_id: str) -> str | None:
+        """The commit stored for this session, or None when nothing pinned one."""
+        row = self.conn.execute("SELECT baseline FROM sessions WHERE adw_id=?",
+                                (adw_id,)).fetchone()
+        return row[0] if row and row[0] else None
+
+    def session_set_baseline(self, adw_id: str, sha: str) -> None:
+        self.conn.execute("UPDATE sessions SET baseline=? WHERE adw_id=?",
+                          (sha, adw_id))
 
     def session_finish(self, adw_id: str, ok: bool) -> None:
         self.conn.execute(

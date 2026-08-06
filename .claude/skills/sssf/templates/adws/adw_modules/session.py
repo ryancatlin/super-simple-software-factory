@@ -3,6 +3,9 @@
 `ensure(cfg, adw_id)` joins the session if it exists or creates it under
 exactly that id (pinned ids for repeatable runs); omitted, a fresh id is
 minted and printed so the next ADW can pick it up.
+
+`baseline(run, head)` pins the commit the session started from, once per
+adw_id, so every round of a re-invoked session measures from the same place.
 """
 
 from __future__ import annotations
@@ -83,3 +86,19 @@ def ensure(cfg: SSSFConfig, adw_id: str | None = None) -> Run:
     _finalize_when_killed(run)
     run.console.session_started(adw_id, run.engineer)
     return run
+
+
+def baseline(run: Run, head: str) -> tuple[str, bool]:
+    """The commit this SESSION started from. Returns (sha, pinned_now).
+
+    A session that is re-invoked on the same adw_id is one piece of work in
+    several rounds, so the baseline belongs to the session, not the invocation.
+    Pinned per-invocation it would move with every round, and the documenter
+    would describe only the last one — observed live on a session re-invoked
+    five times. The first invocation stores HEAD; a rejoin reads it back.
+    """
+    stored = run.tracer.session_baseline(run.adw_id)
+    if stored:
+        return stored, False
+    run.tracer.session_set_baseline(run.adw_id, head)
+    return head, True

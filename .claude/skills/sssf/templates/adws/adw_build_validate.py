@@ -11,6 +11,7 @@ Phases: engineer(request) -> builder
         -> [builder(extend, instrument-scoped) -> code(coverage)
             -> code(provision: build + start) -> code(capture: floor + probes)
             -> validator(audit) -> code(teardown) -> builder(revise) ... bounded]
+        -> git(commit_build), on green
 
 Each cycle: the extend phase maps the change's acceptance criteria to flows
 and probes (authoring any that are missing, write-scoped to the declaration),
@@ -22,6 +23,14 @@ times. Each iteration tears its server down before the builder edits, so
 nothing is left serving stale code, and teardown also sits in a `finally` so
 crash and kill paths leave no orphan either.
 
+This is also the chain that FINISHES an attempt someone else left in the tree.
+simple-sdlc leaves a rejected round uncommitted and refuses to start on a dirty
+tree, so on green this chain commits — the whole tree, because the whole
+validated tree is the work product here and the loop may well be finishing work
+it did not write. A green run that landed nothing would leave that work stranded
+behind the pre-commit guard, which is what makes re-running simple-sdlc on a
+dirty tree look tempting.
+
 Requires the project's validation declaration to be enabled — see
 cookbooks/setup_validation.md. Until then the run reports skipped-and-red.
 """
@@ -30,7 +39,7 @@ import argparse
 import os
 import sys
 
-from adw_modules import agents, gates, services, session, utils
+from adw_modules import agents, gates, git_helper, services, session, utils
 from adw_modules.data_types import (AgentCall, AuditOutput, BuildOutput,
                                     ExtendOutput, GenericOutput, PhaseParams)
 from adw_validate import EXTEND_BRIEF, declaration_gap
@@ -67,8 +76,8 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
     cfg = agents.load_config(config)
     agents.validate(cfg, REQUIRED_AGENTS)
     run = session.ensure(cfg, adw_id)
-    # A validated chain — its commits sit behind the verdict by construction,
-    # so the pre-commit guard hook lets its git phases through.
+    # A validated chain — its one commit runs only after a green verdict, so
+    # the pre-commit guard hook lets that git phase through.
     os.environ["SSSF_VALIDATED_CHAIN"] = run.adw_id
 
     with run.phase(PhaseParams(name="request", kind="engineer", owner=run.engineer,
@@ -176,6 +185,20 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml", adw
             previous = ph.call(AgentCall(output_type=BuildOutput, prompt=prompt + BUILD_BRIEF,
                                          previous=feedback,
                                          gates=[gates.diff_matches_claims]))
+
+    if passed:
+        with run.phase(PhaseParams(name="commit_build", kind="code", owner="git",
+                                   description="Land the validated tree — the loop that finishes an attempt must also land it, or the guard strands the work")) as ph:
+            message = (previous.commit_message
+                       or f"sssf({run.adw_id}): {previous.summary}")
+            if git_helper.is_dirty():
+                ph.log(sha=git_helper.commit_all(message), message=message)
+            else:
+                # Green on a clean tree: the work is already committed, or the
+                # builder changed nothing. Neither is a failure — but a commit
+                # phase that quietly did nothing must still say so.
+                ph.log(sha=git_helper.short_sha("HEAD"),
+                       message="nothing to commit — the tree was already clean")
 
     return run.finish(accepted=passed,
                       reason=f"the app never proved its criteria after {MAX_VALIDATION_LOOPS} attempt(s)")

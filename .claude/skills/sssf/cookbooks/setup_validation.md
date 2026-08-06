@@ -84,6 +84,13 @@ validated chain; chores under `adws/`, docs, and specs pass freely;
 to `git commit` mid-phase are separately undone in code — the work stays in
 the tree, the premature history does not.
 
+The guard makes landing an unfinished attempt a chain's job rather than a
+hand commit's, so `adw_build_validate` commits the tree once it comes back
+green — it is both the fix-until-green loop and the way work another run left
+uncommitted gets finished and landed. `adw_simple_sdlc` refuses to start on a
+dirty tree for the same reason: it commits the whole tree, so it must own all
+of it.
+
 **Seeing the proof:** every run's evidence is on disk under the session's
 `context_handoff/validation/<NN>_<flow>/` — `just evidence <adw_id>` lists it
 and opens the folder: screenshots, `*.diff.png`, OCR and text sidecars,
