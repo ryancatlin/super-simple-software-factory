@@ -58,13 +58,30 @@ def json_parses(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def _deleted_in_tree(path: str, run) -> bool:
+    """True when git records `path` as deleted in the working tree."""
+    result = subprocess.run(["git", "status", "--porcelain", "--", path],
+                            capture_output=True, text=True, cwd=run.repo_root)
+    return any(line and "D" in line[:2] for line in result.stdout.splitlines())
+
+
 def diff_matches_claims(envelope: EnvelopeBase, run) -> GateReport:
-    """Every file claimed changed must exist on disk."""
+    """Every file claimed changed must exist on disk — or be a recorded deletion.
+
+    A deletion is as real a change as an edit; a builder told to remove a file
+    and honest enough to claim it must not fail for the honesty. The claim is
+    refuted only when the tree holds no trace of the file at all.
+    """
     report = GateReport()
     for f in getattr(envelope, "changed_files", []):
         p = Path(f)
-        report.check(f, p.exists(),
-                     f"exists, {_size(p)}" if p.exists() else "claimed changed file does not exist")
+        if p.exists():
+            report.check(f, True, f"exists, {_size(p)}")
+        elif _deleted_in_tree(f, run):
+            report.check(f, True, "deleted — a recorded change")
+        else:
+            report.check(f, False,
+                         "claimed changed file neither exists nor shows as deleted")
     return report
 
 
